@@ -444,6 +444,59 @@ select option {
     background: var(--accent-hover);
 }
 
+/* Modal Close Button */
+#close-modal {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid var(--panel-border);
+    color: var(--text-secondary);
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    font-weight: bold;
+    transition: all 0.2s ease;
+}
+
+#close-modal:hover {
+    background: rgba(255, 51, 102, 0.2);
+    color: #ff3366;
+    border-color: rgba(255, 51, 102, 0.5);
+    transform: rotate(90deg);
+}
+
+/* Preset Action Buttons */
+#btn-load-preset {
+    background: rgba(255, 255, 255, 0.1);
+    color: white;
+    border: 1px solid var(--panel-border);
+    border-radius: 8px;
+    cursor: pointer;
+    font-weight: 600;
+    transition: all 0.2s ease;
+}
+
+#btn-load-preset:hover {
+    background: rgba(255, 255, 255, 0.2);
+    border-color: rgba(255, 255, 255, 0.4);
+}
+
+#btn-save-preset {
+    color: #00ff88 !important;
+    border: 1px solid rgba(0, 255, 136, 0.3) !important;
+    border-radius: 8px;
+    cursor: pointer;
+    font-weight: 600;
+    transition: all 0.2s ease;
+}
+
+#btn-save-preset:hover {
+    background: rgba(0, 255, 136, 0.3) !important;
+    box-shadow: 0 0 10px rgba(0, 255, 136, 0.2);
+}
+
 /* Toggle Switch */
 .switch {
     position: relative;
