@@ -7,6 +7,16 @@ echo Starting DMX / sACN Web Visualizer Server...
 echo =======================================================
 echo.
 
+:: Check if node_modules exists
+if not exist node_modules\ (
+    echo [ERROR] 'node_modules' folder not found!
+    echo It looks like you haven't installed dependencies yet.
+    echo Please run 'install.bat' first.
+    echo.
+    pause
+    exit
+)
+
 :: Start the Node.js server in a separate background/minimized process 
 :: or just run it in this window. Running in this window is better so the user can close it easily.
 start "DMX Backend Server" cmd /k "node server.js"
