@@ -67,7 +67,9 @@
                 <h1>Universe <span id="current-universe-display">Waiting...</span> Data</h1>
                 <div class="view-controls">
                     <button id="btn-intensity" class="active">Intensity</button>
-                    <!-- <button id="btn-rgb">RGB</button> -->
+                    <button id="btn-values">Values</button>
+                    <button id="btn-pause"
+                        style="margin-left: 10px; background: rgba(255, 100, 100, 0.2); border-color: rgba(255, 100, 100, 0.4);">Pause</button>
                 </div>
             </header>
 
@@ -96,8 +98,16 @@
             <div class="modal-body">
                 <div class="form-group">
                     <label>Art-Net In (Listen Port 6454)</label>
-                    <select id="bridge-in-interface" disabled>
-                        <option>0.0.0.0 (All Interfaces)</option>
+                    <select id="bridge-in-interface">
+                        <option value="0.0.0.0">0.0.0.0 (All Interfaces)</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label>Universe Numbering Offset</label>
+                    <select id="bridge-universe-offset">
+                        <option value="0">Start at Universe 0</option>
+                        <option value="1">Start at Universe 1</option>
                     </select>
                 </div>
 
@@ -111,6 +121,26 @@
                 <div class="form-group">
                     <label>sACN Target Unicast IP</label>
                     <input type="text" id="bridge-target-ip" placeholder="e.g. 192.168.1.50" value="127.0.0.1">
+                </div>
+
+                <div class="form-group">
+                    <label>Muted Universes (Comma Separated)</label>
+                    <input type="text" id="bridge-muted-universes" placeholder="e.g. 0, 1, 5" value="">
+                </div>
+                <!-- Presets Section -->
+                <div class="form-group" style="padding-top: 15px; border-top: 1px solid rgba(255,255,255,0.1);">
+                    <label>Bridge Presets</label>
+                    <div style="display: flex; gap: 8px; margin-bottom: 8px;">
+                        <select id="preset-selector" style="flex: 1;">
+                            <option value="" disabled selected>Select a preset...</option>
+                        </select>
+                        <button id="btn-load-preset" class="icon-btn" style="padding: 0 12px;">Load</button>
+                    </div>
+                    <div style="display: flex; gap: 8px;">
+                        <input type="text" id="preset-name" placeholder="Preset name" style="flex: 1;">
+                        <button id="btn-save-preset" class="icon-btn"
+                            style="padding: 0 12px; background: rgba(0, 255, 136, 0.2);">Save</button>
+                    </div>
                 </div>
 
                 <div class="form-group enable-row">

@@ -22,6 +22,18 @@ const selectOutInterface = document.getElementById('bridge-out-interface');
 const inputTargetIp = document.getElementById('bridge-target-ip');
 const toggleEnableBridge = document.getElementById('bridge-enable-toggle');
 const statusBadge = document.getElementById('bridge-status-indicator');
+const selectInInterface = document.getElementById('bridge-in-interface');
+const selectUniverseOffset = document.getElementById('bridge-universe-offset');
+const inputMutedUniverses = document.getElementById('bridge-muted-universes');
+const selectPreset = document.getElementById('preset-selector');
+const inputPresetName = document.getElementById('preset-name');
+const btnSavePreset = document.getElementById('btn-save-preset');
+const btnLoadPreset = document.getElementById('btn-load-preset');
+
+// View Controls
+const btnIntensity = document.getElementById('btn-intensity');
+const btnValues = document.getElementById('btn-values');
+const btnPause = document.getElementById('btn-pause');
 
 // State
 let currentProtocol = 'sACN'; // 'sACN' or 'ArtNet'
@@ -29,6 +41,9 @@ let currentUniverse = null; // can be number or 'all'
 let activeUniverses = { sACN: [], ArtNet: [] };
 let frames = 0;
 let lastFpsTime = performance.now();
+let isPaused = false;
+let viewMode = 'intensity'; // 'intensity' or 'values'
+let universeOffset = 0;
 
 // High Performance Data Model
 const universeData = new Map(); // "sACN-1" -> Uint8Array(512)
@@ -159,6 +174,36 @@ function switchUniverse(universeId) {
     });
 }
 
+// View Mode Logic
+btnIntensity.addEventListener('click', () => {
+    viewMode = 'intensity';
+    btnIntensity.classList.add('active');
+    btnValues.classList.remove('active');
+    forceRepaintAll();
+});
+
+btnValues.addEventListener('click', () => {
+    viewMode = 'values';
+    btnValues.classList.add('active');
+    btnIntensity.classList.remove('active');
+    forceRepaintAll();
+});
+
+btnPause.addEventListener('click', () => {
+    isPaused = !isPaused;
+    if (isPaused) {
+        btnPause.classList.add('active');
+        btnPause.textContent = 'Resume';
+    } else {
+        btnPause.classList.remove('active');
+        btnPause.textContent = 'Pause';
+    }
+});
+
+function forceRepaintAll() {
+    universeData.forEach((_, key) => universeDirty.add(key));
+}
+
 // Helper to calculate color based on intensity (Green scale)
 function getIntensityColor(value) {
     if (value === 0) return 'var(--dmx-inactive)';
@@ -188,34 +233,58 @@ function drawMiniCanvas(ctx, dataArr) {
 
 // ---- GAME LOOP FOR RENDERING ----
 function renderLoop() {
-    universeDirty.forEach(key => {
-        const dataMap = universeData.get(key);
-        if (!dataMap) return;
+    if (!isPaused) {
+        universeDirty.forEach(key => {
+            const dataMap = universeData.get(key);
+            if (!dataMap) return;
 
-        // 1. Update Main Grid (only DOM elements that actually changed)
-        const mainChannels = gridsCache.get(key);
-        if (mainChannels) {
-            for (let i = 0; i < 512; i++) {
-                const val = dataMap[i];
-                const el = mainChannels[i];
-                // Only touch DOM if changed!
-                if (el.__val !== val) {
-                    el.__val = val;
-                    el.style.backgroundColor = getIntensityColor(val);
-                    if (val > 0) el.style.color = 'rgba(0,0,0,0.5)';
-                    else el.style.color = 'rgba(255,255,255,0.3)';
+            // 1. Update Main Grid (only DOM elements that actually changed)
+            const mainChannels = gridsCache.get(key);
+            if (mainChannels) {
+                for (let i = 0; i < 512; i++) {
+                    const val = dataMap[i];
+                    const el = mainChannels[i];
+
+                    // Always update text if in values mode
+                    if (viewMode === 'values') {
+                        if (el.__textVal !== val) {
+                            el.textContent = val > 0 ? val : i + 1;
+                            el.__textVal = val;
+                        }
+                    } else {
+                        if (el.__textVal !== undefined) {
+                            el.textContent = i + 1;
+                            el.__textVal = undefined;
+                        }
+                    }
+
+                    // Only touch DOM styles if changed!
+                    if (el.__val !== val) {
+                        el.__val = val;
+                        el.style.backgroundColor = getIntensityColor(val);
+                        if (viewMode === 'values' && val > 0) {
+                            el.style.color = 'rgba(0,0,0,0.8)';
+                            el.style.fontWeight = 'bold';
+                        } else if (val > 0) {
+                            el.style.color = 'rgba(0,0,0,0.5)';
+                            el.style.fontWeight = 'normal';
+                        } else {
+                            el.style.color = 'rgba(255,255,255,0.3)';
+                            el.style.fontWeight = 'normal';
+                        }
+                    }
                 }
             }
-        }
 
-        // 2. Update Minimap Grid (Via high perf Canvas pixel buffer)
-        const mini = minimapCache.get(key);
-        if (mini) {
-            drawMiniCanvas(mini.ctx, dataMap);
-        }
-    });
+            // 2. Update Minimap Grid (Via high perf Canvas pixel buffer)
+            const mini = minimapCache.get(key);
+            if (mini) {
+                drawMiniCanvas(mini.ctx, dataMap);
+            }
+        });
 
-    universeDirty.clear(); // Clear jobs for this frame
+        universeDirty.clear(); // Clear jobs for this frame
+    }
 
     // update FPS
     frames++;
@@ -240,8 +309,9 @@ socket.on('connect', () => {
     connectionText.textContent = 'Connected';
     socket.emit('join-universe', { protocol: currentProtocol, universeId: 'all' });
 
-    // Request IPs
+    // Request IPs and presets
     socket.emit('get-network-interfaces');
+    socket.emit('get-presets');
 });
 
 socket.on('disconnect', () => {
@@ -289,7 +359,7 @@ function updateSelector() {
     activeList.forEach(uni => {
         const option = document.createElement('option');
         option.value = uni;
-        option.textContent = `Universe ${uni}`;
+        option.textContent = `Universe ${uni + universeOffset}`;
         if (currentUniverse === uni) option.selected = true;
         universeSelector.appendChild(option);
     });
@@ -310,7 +380,7 @@ function renderActiveUniverses() {
     activeList.forEach(uni => {
         const pill = document.createElement('div');
         pill.className = `universe-pill active ${uni === currentUniverse ? 'selected' : ''}`;
-        pill.textContent = `U${uni}`;
+        pill.textContent = `U${uni + universeOffset}`;
         pill.addEventListener('click', () => switchUniverse(uni));
         activeGrid.appendChild(pill);
     });
@@ -330,7 +400,7 @@ function renderMinimap() {
 
         const label = document.createElement('div');
         label.className = 'mini-grid-label';
-        label.textContent = uni;
+        label.textContent = uni + universeOffset;
         wrapper.appendChild(label);
 
         const miniGrid = document.createElement('canvas');
@@ -393,23 +463,39 @@ btnCloseModal.addEventListener('click', () => {
     bridgeModal.classList.add('hidden');
 });
 
-// Receive interfaces and populate dropdown
 socket.on('network-interfaces', (interfaces) => {
     // Keep the "Default Route" option
     selectOutInterface.innerHTML = '<option value="">Default Route (Any IP)</option>';
+    selectInInterface.innerHTML = '<option value="0.0.0.0">0.0.0.0 (All Interfaces)</option>';
+
     interfaces.forEach(net => {
-        const opt = document.createElement('option');
-        opt.value = net.address;
-        opt.textContent = `${net.name} - ${net.address}`;
-        selectOutInterface.appendChild(opt);
+        const optOut = document.createElement('option');
+        optOut.value = net.address;
+        optOut.textContent = `${net.name} - ${net.address}`;
+        selectOutInterface.appendChild(optOut);
+
+        const optIn = document.createElement('option');
+        optIn.value = net.address;
+        optIn.textContent = `${net.name} - ${net.address}`;
+        selectInInterface.appendChild(optIn);
     });
 });
 
 // Receive active bridge config from server
 socket.on('bridge-config', (config) => {
+    selectInInterface.value = config.inInterface || '0.0.0.0';
     selectOutInterface.value = config.outInterface || '';
     inputTargetIp.value = config.targetIp || '127.0.0.1';
     toggleEnableBridge.checked = config.enabled;
+    selectUniverseOffset.value = config.universeOffset || 0;
+    inputMutedUniverses.value = (config.mutedUniverses || []).join(', ');
+
+    universeOffset = parseInt(config.universeOffset || 0);
+
+    // Refresh UI to show new offset
+    updateSelector();
+    renderActiveUniverses();
+    renderMinimap();
 
     if (config.enabled) {
         statusBadge.textContent = 'BRIDGE ON';
@@ -422,12 +508,65 @@ socket.on('bridge-config', (config) => {
 
 // Save and apply bridge settings
 btnSaveBridge.addEventListener('click', () => {
+    // parse muted universes correctly
+    const mutedStr = inputMutedUniverses.value;
+    const mutedArr = mutedStr.split(',')
+        .map(v => v.trim())
+        .filter(v => v !== '')
+        .map(v => parseInt(v))
+        .filter(v => !isNaN(v));
+
     const newConfig = {
         enabled: toggleEnableBridge.checked,
+        inInterface: selectInInterface.value,
         outInterface: selectOutInterface.value,
-        targetIp: inputTargetIp.value.trim()
+        targetIp: inputTargetIp.value.trim(),
+        universeOffset: parseInt(selectUniverseOffset.value),
+        mutedUniverses: mutedArr
     };
 
     socket.emit('update-bridge-config', newConfig);
     bridgeModal.classList.add('hidden');
+});
+
+// --- PRESETS LOGIC ---
+socket.on('presets-list', (presets) => {
+    selectPreset.innerHTML = '<option value="" disabled selected>Select a preset...</option>';
+    presets.forEach(p => {
+        const opt = document.createElement('option');
+        opt.value = p;
+        opt.textContent = p;
+        selectPreset.appendChild(opt);
+    });
+});
+
+btnSavePreset.addEventListener('click', () => {
+    const name = inputPresetName.value.trim();
+    if (!name) return alert("Please enter a preset name");
+
+    const mutedStr = inputMutedUniverses.value;
+    const mutedArr = mutedStr.split(',')
+        .map(v => v.trim())
+        .filter(v => v !== '')
+        .map(v => parseInt(v))
+        .filter(v => !isNaN(v));
+
+    const configToSave = {
+        enabled: toggleEnableBridge.checked,
+        inInterface: selectInInterface.value,
+        outInterface: selectOutInterface.value,
+        targetIp: inputTargetIp.value.trim(),
+        universeOffset: parseInt(selectUniverseOffset.value),
+        mutedUniverses: mutedArr
+    };
+
+    socket.emit('save-preset', { name: name, config: configToSave });
+    inputPresetName.value = '';
+});
+
+btnLoadPreset.addEventListener('click', () => {
+    const name = selectPreset.value;
+    if (name) {
+        socket.emit('load-preset', name);
+    }
 });
