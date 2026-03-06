@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DMX / sACN Live Visualizer</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+    <script src="/socket.io/socket.io.js"></script>
+</head>
+
+<body>
+    <div class="app-container">
+        <!-- Sidebar -->
+        <aside class="glass-panel sidebar">
+            <div class="sidebar-header">
+                <div class="status-indicator">
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <span id="connection-dot" class="dot disconnected"></span>
+                        <h2 id="connection-text">Disconnected</h2>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <span id="bridge-status-indicator" class="bridge-badge off">BRIDGE OFF</span>
+                        <button id="btn-bridge-settings" class="icon-btn" title="Bridge Settings"
+                            style="padding: 6px; background: rgba(255,255,255,0.1); border-radius: 6px; color: white; border: 1px solid rgba(255, 255, 255, 0.3); cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.2s;">
+                            <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2"
+                                fill="none" stroke-linecap="round" stroke-linejoin="round">
+                                <circle cx="12" cy="12" r="3"></circle>
+                                <path
+                                    d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z">
+                                </path>
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+                <div class="protocol-toggle">
+                    <button id="btn-sacn" class="proto-btn active">sACN</button>
+                    <button id="btn-artnet" class="proto-btn">Art-Net</button>
+                </div>
+            </div>
+
+            <div class="config-section">
+                <h3>Select Universe</h3>
+                <div class="custom-select">
+                    <select id="universe-selector">
+                        <option value="" disabled selected>Waiting for data...</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="active-universes-section">
+                <h3>Active Universes (<span id="active-count">0</span>)</h3>
+                <div id="active-universes-grid" class="universes-grid">
+                    <!-- Dynamic universe pills -->
+                </div>
+            </div>
+
+            <div class="system-stats">
+                <p>FPS: <span id="fps-counter">0</span></p>
+            </div>
+        </aside>
+
+        <!-- Main Visualizer Area -->
+        <main class="glass-panel main-content">
+            <header class="main-header">
+                <h1>Universe <span id="current-universe-display">Waiting...</span> Data</h1>
+                <div class="view-controls">
+                    <button id="btn-intensity" class="active">Intensity</button>
+                    <!-- <button id="btn-rgb">RGB</button> -->
+                </div>
+            </header>
+
+            <div class="dmx-grid-container" id="grids-container">
+                <!-- Grids will be generated via JS -->
+            </div>
+        </main>
+
+        <!-- Right Sidebar Minimap -->
+        <aside class="glass-panel minimap-sidebar">
+            <h3 class="minimap-title">All Universes</h3>
+            <div id="minimap-container" class="minimap-container">
+                <!-- Mini grids generated via JS -->
+            </div>
+        </aside>
+    </div>
+
+    <!-- Bridge Settings Modal -->
+    <div id="bridge-modal" class="modal-overlay hidden">
+        <div class="glass-panel modal-content">
+            <div class="modal-header">
+                <h2>Network Bridge Routing</h2>
+                <button id="close-modal" class="icon-btn">X</button>
+            </div>
+
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>Art-Net In (Listen Port 6454)</label>
+                    <select id="bridge-in-interface" disabled>
+                        <option>0.0.0.0 (All Interfaces)</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label>sACN Out Interface (Virtual VPN/Tailscale)</label>
+                    <select id="bridge-out-interface">
+                        <option value="">Default Route</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label>sACN Target Unicast IP</label>
+                    <input type="text" id="bridge-target-ip" placeholder="e.g. 192.168.1.50" value="127.0.0.1">
+                </div>
+
+                <div class="form-group enable-row">
+                    <label for="bridge-enable-toggle">Enable Real-Time Conversion</label>
+                    <label class="switch">
+                        <input type="checkbox" id="bridge-enable-toggle">
+                        <span class="slider round"></span>
+                    </label>
+                </div>
+            </div>
+
+            <div class="modal-footer">
+                <button id="btn-save-bridge" class="primary-btn">Save & Apply</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+
+</html>
