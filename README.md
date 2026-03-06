@@ -2,6 +2,7 @@
 
 ![Web Visualizer](assets/screenshot-grid.png)
 ![Bridge Settings](assets/screenshot-modal.png)
+![Tunnel UI](assets/screenshot-tunnel.png)
 A high-performance, real-time web visualizer and protocol conversion bridge for DMX512 lighting data. This tool allows users to visualize up to 96+ universes of Art-Net or sACN traffic directly in a modern web browser over the network at 60 FPS, with absolutely no frame drops, utilizing binary parsing and GPU-accelerated drawing.
 
 Additionally, this application functions as a **Zero-Latency Art-Net to sACN Unicast Bridge**, allowing interoperability between localized DMX software (TouchDesigner, Resolume, GrandMA) and game engines distributed over the internet using VPNs (like Unreal Engine 5 via ZeroTier, Tailscale, etc).
