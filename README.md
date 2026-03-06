@@ -12,6 +12,12 @@ Additionally, this application functions as a **Zero-Latency Art-Net to sACN Uni
 - **Dual Protocol Listeners:** Listens seamlessly on both UDP port `5568` (sACN/E1.31) and UDP port `6454` (Art-Net).
 - **Protocol Toggle:** Switch between monitoring the Art-Net buffer or the sACN buffer seamlessly via the UI.
 - **Hardware Bridge Converter:** Instantly encapsulates active Art-Net payloads into strict SMPTE sACN UDP packets and fires them over a selected target Network Interface.
+- **Values Monitor:** Toggle between standard intensity view and a numerical mode to see exact 0-255 DMX values rendered within each cell.
+- **Pause Render Loop:** Suspend UI redraws dynamically via the "Pause" button, reducing CPU overhead by up to 95% while keeping background data bridging fully operational.
+- **Configurable Universe Offset:** Allows visual numbering to start at 0 or 1 to match different lighting consoles seamlessly.
+- **Art-Net Interface Selection:** Choose exactly which network interface (IP address) should listen to incoming Art-Net data, avoiding phantom traffic.
+- **Universe Muting:** Explicitly mute specific universes (comma-separated) to prevent duplicating output from mixed sources.
+- **Presets System:** Save and load full network bridge configurations automatically stored into local `.json` files.
 
 ---
 
@@ -42,16 +48,21 @@ By default, the UI waits for incoming data.
 3. The Web Visualizer will immediately detect universes receiving payload data.
 4. **Active Universes**: Click the little pills on the left column (`U1`, `U42`, etc.) to enter Full Grid view for that specific Universe.
 5. **Minimap**: You will see all universes glowing dynamically on the right-hand panel. Simply click one of them to expand it.
-
+6. **Toggle Values**: Click the "Values" button at the top to display raw 0-255 DMX levels.
+7. **Pause Rendering**: Click the "Pause" button to stop drawing the grid during heavy background bridging sessions.
+ 
 ### 3. Using the Protocol Converter Bridge
 If you need to beam Art-Net data across the internet safely to Unreal Engine:
 1. Ensure your Lighting software outputs **Art-Net** to the computer on `port 6454` (e.g. `127.0.0.1` or `255.255.255.255`).
 2. Open the Visualizer Web page. 
 3. Click the `⚙️ Gear Icon` underneath "Connected" on the left menu.
-4. From the Network Interface Dropdown, choose the network adapter connecting you to your target (For example, selecting your `ZeroTier` or `Tailscale` Virtual adapter interface IP).
-5. In the **Target IP** field, type the VPN IP address of the recipient Machine (e.g. `10.144.33.20`).
-6. Flip the **Enable Real-Time Conversion** switch to green and click `Save & Apply`.
-7. You will see the Bridge badge say **BRIDGE ON**. Art-Net packets are now being brutally translated into Unicast sACN straight into your target pipeline.
+4. From the "Art-Net In" Dropdown, choose which interface to listen to (or `0.0.0.0` for all).
+5. From the "sACN Out Interface" Dropdown, choose the network adapter connecting you to your target (For example, selecting your `ZeroTier` or `Tailscale` Virtual adapter interface IP).
+6. In the **Target IP** field, type the VPN IP address of the recipient Machine (e.g. `10.144.33.20`).
+7. (Optional) Set an **Universe Offset** if your software expects 1-based numbering vs 0-based indexing.
+8. (Optional) In **Muted Universes**, enter any universes you wish to discard without bridging (e.g. `0, 2`).
+9. Flip the **Enable Real-Time Conversion** switch to green and click `Save & Apply`.
+10. To save this configuration, type a name in the **Bridge Presets** field and click `Save`. You can `Load` this setup later instantly.
 
 ## 🧰 Technical Architecture
 - **Backend (Node.js)**: Runs native Node `DGRAM` UDP sockets. Bypasses bulky third-party DMX packages to parse raw `Buffer` payloads minimizing byte reading to mere offsets. Diffing logic checks for memory matches.
