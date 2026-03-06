@@ -67,3 +67,10 @@ If you need to beam Art-Net data across the internet safely to Unreal Engine:
 ## 🧰 Technical Architecture
 - **Backend (Node.js)**: Runs native Node `DGRAM` UDP sockets. Bypasses bulky third-party DMX packages to parse raw `Buffer` payloads minimizing byte reading to mere offsets. Diffing logic checks for memory matches.
 - **Frontend (Vanilla HTML/JS/CSS3)**: Avoids frontend frameworks (React/Vue) deliberately. Rendering utilizes the `Uint8Array` diff logic and the `CanvasRenderingContext2D` Image Data API. It calculates rgba bitshifts to alter colors in the Minimaps natively in the GPU instead of manipulating thousands of traditional HTML elements, sustaining 60 FPS under a massive 46,000 DMX channel influx.
+
+---
+
+## 🌟 Credits
+
+- **Tolch** - [Instagram (@tolch.x)](https://www.instagram.com/tolch.x/)
+- **Vj X-Rat** - [Instagram (@vj.xrat)](https://www.instagram.com/vj.xrat/)
