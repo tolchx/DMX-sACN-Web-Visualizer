@@ -1,0 +1,8 @@
+{
+  "enabled": false,
+  "inInterface": "0.0.0.0",
+  "outInterface": "",
+  "targetIp": "127.0.0.1",
+  "universeOffset": 0,
+  "mutedUniverses": []
+}

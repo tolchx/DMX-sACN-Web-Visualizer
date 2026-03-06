@@ -119,8 +119,19 @@
                 </div>
 
                 <div class="form-group">
-                    <label>sACN Target Unicast IP</label>
-                    <input type="text" id="bridge-target-ip" placeholder="e.g. 192.168.1.50" value="127.0.0.1">
+                    <label>sACN Target Routing Mode</label>
+                    <div style="display: flex; gap: 15px; margin-bottom: 8px; margin-top: 4px;">
+                        <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
+                            <input type="radio" name="targetMode" id="mode-multicast" value="multicast"
+                                style="width: auto;"> Multicast (Recommended)
+                        </label>
+                        <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
+                            <input type="radio" name="targetMode" id="mode-unicast" value="unicast"
+                                style="width: auto;"> Unicast IP
+                        </label>
+                    </div>
+                    <input type="text" id="bridge-target-ip" placeholder="e.g. 192.168.1.50" value="127.0.0.1"
+                        style="display: none;">
                 </div>
 
                 <div class="form-group">

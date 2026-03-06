@@ -20,6 +20,8 @@ const btnCloseModal = document.getElementById('close-modal');
 const btnSaveBridge = document.getElementById('btn-save-bridge');
 const selectOutInterface = document.getElementById('bridge-out-interface');
 const inputTargetIp = document.getElementById('bridge-target-ip');
+const radioModeMulticast = document.getElementById('mode-multicast');
+const radioModeUnicast = document.getElementById('mode-unicast');
 const toggleEnableBridge = document.getElementById('bridge-enable-toggle');
 const statusBadge = document.getElementById('bridge-status-indicator');
 const selectInInterface = document.getElementById('bridge-in-interface');
@@ -454,6 +456,14 @@ socket.on('dmx-data', (payload) => {
 
 // --- BRIDGE MODAL LOGIC ---
 
+radioModeMulticast.addEventListener('change', () => {
+    inputTargetIp.style.display = 'none';
+});
+
+radioModeUnicast.addEventListener('change', () => {
+    inputTargetIp.style.display = 'block';
+});
+
 // Toggle Modal
 btnBridgeSettings.addEventListener('click', () => {
     bridgeModal.classList.remove('hidden');
@@ -485,7 +495,16 @@ socket.on('network-interfaces', (interfaces) => {
 socket.on('bridge-config', (config) => {
     selectInInterface.value = config.inInterface || '0.0.0.0';
     selectOutInterface.value = config.outInterface || '';
-    inputTargetIp.value = config.targetIp || '127.0.0.1';
+
+    if (config.targetIp && config.targetIp.toLowerCase() === 'multicast') {
+        radioModeMulticast.checked = true;
+        inputTargetIp.style.display = 'none';
+    } else {
+        radioModeUnicast.checked = true;
+        inputTargetIp.style.display = 'block';
+        inputTargetIp.value = config.targetIp || '127.0.0.1';
+    }
+
     toggleEnableBridge.checked = config.enabled;
     selectUniverseOffset.value = config.universeOffset || 0;
     inputMutedUniverses.value = (config.mutedUniverses || []).join(', ');
@@ -520,7 +539,7 @@ btnSaveBridge.addEventListener('click', () => {
         enabled: toggleEnableBridge.checked,
         inInterface: selectInInterface.value,
         outInterface: selectOutInterface.value,
-        targetIp: inputTargetIp.value.trim(),
+        targetIp: radioModeMulticast.checked ? 'Multicast' : inputTargetIp.value.trim(),
         universeOffset: parseInt(selectUniverseOffset.value),
         mutedUniverses: mutedArr
     };
@@ -555,7 +574,7 @@ btnSavePreset.addEventListener('click', () => {
         enabled: toggleEnableBridge.checked,
         inInterface: selectInInterface.value,
         outInterface: selectOutInterface.value,
-        targetIp: inputTargetIp.value.trim(),
+        targetIp: radioModeMulticast.checked ? 'Multicast' : inputTargetIp.value.trim(),
         universeOffset: parseInt(selectUniverseOffset.value),
         mutedUniverses: mutedArr
     };

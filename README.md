@@ -6,6 +6,8 @@ A high-performance, real-time web visualizer and protocol conversion bridge for 
 
 Additionally, this application functions as a **Zero-Latency Art-Net to sACN Unicast Bridge**, allowing interoperability between localized DMX software (TouchDesigner, Resolume, GrandMA) and game engines distributed over the internet using VPNs (like Unreal Engine 5 via ZeroTier, Tailscale, etc).
 
+Finally, the project now includes a **Zero-Configuration "sACN Internet Tunnel"** (`tunnel` application) that completely bypasses the need for VPNs or port-forwarding, utilizing WebSockets and `localtunnel` to transmit sACN seamlessly to any remote user over standard HTTPS.
+
 ## 🚀 Features
 - **Real-Time Data Visualization:** Displays a full 512-channel grid of any selected universe with intensity color values.
 - **"All Universes" Minimap:** A dynamic, scrollable sidebar utilizing Canvas memory buffers to render 91+ active universes simultaneously without bogging down the DOM.
@@ -58,11 +60,33 @@ If you need to beam Art-Net data across the internet safely to Unreal Engine:
 3. Click the `⚙️ Gear Icon` underneath "Connected" on the left menu.
 4. From the "Art-Net In" Dropdown, choose which interface to listen to (or `0.0.0.0` for all).
 5. From the "sACN Out Interface" Dropdown, choose the network adapter connecting you to your target (For example, selecting your `ZeroTier` or `Tailscale` Virtual adapter interface IP).
-6. In the **Target IP** field, type the VPN IP address of the recipient Machine (e.g. `10.144.33.20`).
+6. In the **Target IP Routing Mode**, select:
+    - **Multicast (Recommended)**: The app will automatically calculate the multicast IP (e.g., `239.255.0.1`) so that multiple local apps (like Unreal Engine and the Tunnel app) can listen to the data simultaneously without port-locking issues.
+    - **Unicast IP**: Sends data to a specific device on the network (e.g. `10.144.33.20`).
 7. (Optional) Set an **Universe Offset** if your software expects 1-based numbering vs 0-based indexing.
 8. (Optional) In **Muted Universes**, enter any universes you wish to discard without bridging (e.g. `0, 2`).
 9. Flip the **Enable Real-Time Conversion** switch to green and click `Save & Apply`.
 10. To save this configuration, type a name in the **Bridge Presets** field and click `Save`. You can `Load` this setup later instantly.
+
+### 4. Using the sACN Internet Tunnel (No VPN Required)
+If you want to send lights to a remote collaborator but don't want to set up ZeroTier, Tailscale, or router Port Forwarding, use the parallel **Tunnel** application.
+
+**Initial Setup:**
+1. Open the `tunnel` folder.
+2. Run `install_tunnel.bat` (only needed the first time).
+
+**As the HOST (Sending Lights):**
+1. Run `start_tunnel.bat`. This opens a modern UI on `http://localhost:3001`.
+2. Click **Start Hosting**. The tunnel will now listen for any local Multicast sACN traffic (automatically capturing up to 100 Universes simultaneously).
+3. Click **Generate Public Link**. The system automatically creates a secure `https://something.loca.lt` link using Localtunnel.
+4. Copy this link and send it to your remote collaborator.
+*(Note: Ensure your `web-visualizer` bridge is set to **Multicast** mode so the Tunnel can intercept the translation).*
+
+**As the JOINER (Receiving Lights in Unreal Engine):**
+1. Run `start_tunnel.bat` on your own remote PC.
+2. In the "Join a Session" card, paste the `loca.lt` link your friend sent you.
+3. Click **Connect via Internet**. 
+4. The system will invisibly bypass localtunnel protections and stream the lighting data directly into your computer, re-emitting it locally as Multicast sACN. Unreal Engine will instantly receive the lights natively with zero network configuration needed!
 
 ## 🧰 Technical Architecture
 - **Backend (Node.js)**: Runs native Node `DGRAM` UDP sockets. Bypasses bulky third-party DMX packages to parse raw `Buffer` payloads minimizing byte reading to mere offsets. Diffing logic checks for memory matches.

@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>sACN Internet Tunnel</title>
+    <link rel="stylesheet" href="style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+</head>
+
+<body>
+    <div class="container">
+        <header>
+            <div class="logo">
+                <i data-lucide="zap"></i>
+                <h1>sACN Internet Tunnel</h1>
+            </div>
+            <div class="status-badge" id="app-status">IDLE</div>
+        </header>
+
+        <div class="cards-grid">
+            <!-- HOST CARD -->
+            <div class="card" id="card-host">
+                <div class="card-header">
+                    <i data-lucide="server"></i>
+                    <h2>Host a Session</h2>
+                </div>
+                <p class="description">Send your local sACN data over the internet to remote players.</p>
+
+                <div class="actions">
+                    <button class="btn primary" id="btn-start-host">Start Hosting</button>
+                    <button class="btn danger hidden" id="btn-stop-host">Stop Hosting</button>
+                    <button class="btn secondary hidden" id="btn-generate-link">Generate Public Link</button>
+                </div>
+
+                <div class="link-display hidden" id="link-container">
+                    <span>Share this link via internet:</span>
+                    <input type="text" id="public-link" readonly value="Generating...">
+                    <button class="btn copy-btn" id="btn-copy">Copy</button>
+                </div>
+            </div>
+
+            <!-- JOIN CARD -->
+            <div class="card" id="card-join">
+                <div class="card-header">
+                    <i data-lucide="plug"></i>
+                    <h2>Join a Session</h2>
+                </div>
+                <p class="description">Receive remote sACN data directly into Unreal Engine.</p>
+
+                <div class="input-group">
+                    <label for="join-url">Host Public Link (or IP)</label>
+                    <input type="text" id="join-url" placeholder="https://something.loca.lt">
+                </div>
+
+                <div class="actions">
+                    <button class="btn primary" id="btn-start-join">Connect via Internet</button>
+                    <button class="btn danger hidden" id="btn-stop-join">Disconnect</button>
+                </div>
+
+                <div class="connection-status hidden" id="join-status">
+                    <div class="dot connecting"></div> Connecting...
+                </div>
+            </div>
+        </div>
+
+        <div class="stats-panel">
+            <h3>Network Traffic</h3>
+            <div class="stats-grid">
+                <div class="stat-box">
+                    <span class="label">Packets In</span>
+                    <span class="value" id="stat-rx">0</span>
+                </div>
+                <div class="stat-box">
+                    <span class="label">Packets Out</span>
+                    <span class="value" id="stat-tx">0</span>
+                </div>
+                <div class="stat-box">
+                    <span class="label">Active Universes</span>
+                    <span class="value" id="stat-uni">-</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+
+</html>

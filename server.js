@@ -147,8 +147,14 @@ artNetServer.on('message', (msg, rinfo) => {
             slotsData.copy(sacnSendBuffer, 126, 0, copyLen);
             if (copyLen < 512) sacnSendBuffer.fill(0, 126 + copyLen, 126 + 512);
 
-            // Send asynchronously Unicast
-            bridgeOutSocket.send(sacnSendBuffer, 0, sacnSendBuffer.length, 5568, bridgeConfig.targetIp);
+            // Apply Target IP logic (Multicast resolution)
+            let destIp = bridgeConfig.targetIp;
+            if (destIp && destIp.toLowerCase() === 'multicast') {
+                destIp = `239.255.${Math.floor(visualizerUni / 256)}.${visualizerUni % 256}`;
+            }
+
+            // Send asynchronously
+            bridgeOutSocket.send(sacnSendBuffer, 0, sacnSendBuffer.length, 5568, destIp);
         }
 
     } catch (e) { }
