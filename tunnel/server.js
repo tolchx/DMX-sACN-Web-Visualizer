@@ -58,8 +58,9 @@ function startHost() {
         stats.packetsReceivedTotal++;
 
         // Broadcast raw buffer to all connected WebSockets
-        io.emit('sacn-forward', { universe, data: msg });
-        io.local.emit('stats-update', getStats()); // update local UI
+        // Using `volatile` means if the connection is slow, it will drop packets instead of buffering them (prevents lag buildup)
+        io.volatile.emit('sacn-forward', { universe, data: msg });
+        // Removed per-packet UI update to save CPU/Event loop (now handled by setInterval)
     });
 
     sacnReceiver.bind(5568);
@@ -99,15 +100,22 @@ function startJoin(targetUrl) {
         const { universe, data } = payload;
         const buffer = Buffer.from(data);
 
-        // Broadcast the received sACN buffer locally using Multicast
+        // Broadcast the received sACN buffer locally using Multicast AND Unicast
         const multicastAddress = `239.255.${Math.floor(universe / 256)}.${universe % 256}`;
+
+        // 1. Send Multicast (Standard sACN)
         sacnSender.send(buffer, 0, buffer.length, 5568, multicastAddress, (err) => {
+            if (err) console.error("Error sending local multicast:", err);
+        });
+
+        // 2. Send Unicast to localhost (Crucial for Unreal Engine if listening on 127.0.0.1)
+        sacnSender.send(buffer, 0, buffer.length, 5568, '127.0.0.1', (err) => {
             if (!err) {
                 stats.packetsSentTotal++;
                 stats.activeUniverses.add(universe);
-                io.local.emit('stats-update', getStats());
+                // Removed per-packet UI update to save CPU/Event loop (now handled by setInterval)
             } else {
-                console.error("Error sending local multicast:", err);
+                console.error("Error sending local unicast:", err);
             }
         });
     });
@@ -144,6 +152,13 @@ setInterval(() => {
     // Clear active universes periodically
     stats.activeUniverses.clear();
 }, 2000);
+
+setInterval(() => {
+    // Update local UI periodically instead of every packet to prevent Event Loop blockage
+    if (currentMode !== 'IDLE') {
+        io.local.emit('stats-update', getStats());
+    }
+}, 300); // UI updates ~3 times per second
 
 
 // ==== WEBSOCKET UI CONTROLS ====
