@@ -1,3 +1,8 @@
 node_modules/
 .env
 .DS_Store
+
+# Runtime portatil de Node (85 MB) y paquetes generados: no van al repo.
+# Para reponerlo: install.bat  (o tools\descargar_runtime.ps1)
+runtime/
+dist/

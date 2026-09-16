@@ -51,6 +51,16 @@ y funciona como **puente entre dos entradas y dos formatos de salida**.
 
 ## 🛠️ Instalación
 
+### Opción A — Portable (NO hace falta instalar Node.js)
+Copiá la carpeta entera a la PC que quieras (no necesita internet) y **doble clic en `start_server.bat`**.
+El runtime de Node y las dependencias viajan dentro de la carpeta (`runtime\` y `node_modules\`),
+así que no se instala ni se modifica nada del sistema.
+
+- Si falta el runtime: `install.bat` lo descarga dentro de la propia carpeta (no instala nada en Windows).
+- Único requisito: el **puerto 3000 libre** y dar permiso de red si Windows/antivirus lo pide.
+- Para armar el `.zip` portable: `python tools\build_portable.py` → genera en `dist\` los paquetes listos para copiar.
+
+### Opción B — Con Node.js instalado (desarrollo)
 1. **[Node.js](https://nodejs.org/en/download) (v16 o superior)**.
 2. Descomprimí la carpeta del proyecto (no lo ejecutes desde dentro del ZIP/RAR).
 3. Doble clic en `install.bat` → instala `express` y `socket.io`. Esperá el `[+] Installation Complete!`.
