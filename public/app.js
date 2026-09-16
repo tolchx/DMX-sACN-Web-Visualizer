@@ -18,19 +18,38 @@ const btnBridgeSettings = document.getElementById('btn-bridge-settings');
 const bridgeModal = document.getElementById('bridge-modal');
 const btnCloseModal = document.getElementById('close-modal');
 const btnSaveBridge = document.getElementById('btn-save-bridge');
-const selectOutInterface = document.getElementById('bridge-out-interface');
-const inputTargetIp = document.getElementById('bridge-target-ip');
-const radioModeMulticast = document.getElementById('mode-multicast');
-const radioModeUnicast = document.getElementById('mode-unicast');
 const toggleEnableBridge = document.getElementById('bridge-enable-toggle');
 const statusBadge = document.getElementById('bridge-status-indicator');
-const selectInInterface = document.getElementById('bridge-in-interface');
-const selectUniverseOffset = document.getElementById('bridge-universe-offset');
-const inputMutedUniverses = document.getElementById('bridge-muted-universes');
 const selectPreset = document.getElementById('preset-selector');
 const inputPresetName = document.getElementById('preset-name');
 const btnSavePreset = document.getElementById('btn-save-preset');
 const btnLoadPreset = document.getElementById('btn-load-preset');
+
+// Entrada Art-Net
+const selArtnetInIface = document.getElementById('artnet-in-interface');
+const chkArtnetInEnabled = document.getElementById('artnet-in-enabled');
+// Entrada sACN
+const selSacnInIface = document.getElementById('sacn-in-interface');
+const chkSacnInEnabled = document.getElementById('sacn-in-enabled');
+const inSacnMcFrom = document.getElementById('sacn-mc-from');
+const inSacnMcTo = document.getElementById('sacn-mc-to');
+// Unificación
+const selMergeSources = document.getElementById('merge-sources');
+const selMergePolicy = document.getElementById('merge-policy');
+// Salida
+const selOutProtocol = document.getElementById('out-protocol');
+const selOutInterface = document.getElementById('bridge-out-interface');
+const selOutTargetMode = document.getElementById('out-target-mode');
+const inputTargetIp = document.getElementById('bridge-target-ip');
+const inOutPort = document.getElementById('out-port');
+const inOutRate = document.getElementById('out-rate');
+const selectUniverseOffset = document.getElementById('bridge-universe-offset');
+const inputMutedUniverses = document.getElementById('bridge-muted-universes');
+// Estado
+const statsText = document.getElementById('bridge-stats-text');
+const sourceBadge = document.getElementById('source-badge');
+const btnUnified = document.getElementById('btn-unified');
+const currentProtocolDisplay = document.getElementById('current-protocol-display');
 
 // View Controls
 const btnIntensity = document.getElementById('btn-intensity');
@@ -38,7 +57,8 @@ const btnValues = document.getElementById('btn-values');
 const btnPause = document.getElementById('btn-pause');
 
 // State
-let currentProtocol = 'sACN'; // 'sACN' or 'ArtNet'
+let currentProtocol = 'sACN'; // 'sACN', 'ArtNet' o 'Unified'
+let unifiedInfo = {}; // universo -> { winner, present }
 let currentUniverse = null; // can be number or 'all'
 let activeUniverses = { sACN: [], ArtNet: [] };
 let frames = 0;
@@ -123,13 +143,13 @@ function switchProtocol(proto) {
     currentProtocol = proto;
 
     // update buttons style
-    if (proto === 'sACN') {
-        btnSacn.classList.add('active');
-        btnArtnet.classList.remove('active');
-    } else {
-        btnArtnet.classList.add('active');
-        btnSacn.classList.remove('active');
-    }
+    [['sACN', btnSacn], ['ArtNet', btnArtnet], ['Unified', btnUnified]].forEach(([name, btn]) => {
+        if (!btn) return;
+        if (name === proto) btn.classList.add('active');
+        else btn.classList.remove('active');
+    });
+    if (currentProtocolDisplay) currentProtocolDisplay.textContent = proto;
+    updateSourceBadge();
 
     // Fallback safe state
     currentUniverse = null;
@@ -150,6 +170,7 @@ function switchProtocol(proto) {
 
 btnSacn.addEventListener('click', () => switchProtocol('sACN'));
 btnArtnet.addEventListener('click', () => switchProtocol('ArtNet'));
+if (btnUnified) btnUnified.addEventListener('click', () => switchProtocol('Unified'));
 
 function switchUniverse(universeId) {
     currentUniverse = universeId;
@@ -454,15 +475,27 @@ socket.on('dmx-data', (payload) => {
     }
 });
 
+// Muestra qué fuentes alimentan el universo que estamos mirando
+function updateSourceBadge() {
+    if (!sourceBadge) return;
+    if (currentUniverse === null || currentUniverse === 'all') {
+        sourceBadge.textContent = currentProtocol === 'Unified'
+            ? 'Unified = Art-Net + sACN mezclados'
+            : `Viendo ${currentProtocol}`;
+        return;
+    }
+    const info = unifiedInfo[currentUniverse];
+    if (!info) {
+        sourceBadge.textContent = `${currentProtocol} · universo ${currentUniverse}`;
+        return;
+    }
+    const flags = [];
+    if (info.present.includes('artnet')) flags.push('Art-Net');
+    if (info.present.includes('sacn')) flags.push('sACN');
+    sourceBadge.textContent = `Universo ${currentUniverse} · fuentes: ${flags.join(' + ') || '—'} · gana: ${info.winner || '—'}`;
+}
+
 // --- BRIDGE MODAL LOGIC ---
-
-radioModeMulticast.addEventListener('change', () => {
-    inputTargetIp.style.display = 'none';
-});
-
-radioModeUnicast.addEventListener('change', () => {
-    inputTargetIp.style.display = 'block';
-});
 
 // Toggle Modal
 btnBridgeSettings.addEventListener('click', () => {
@@ -473,45 +506,87 @@ btnCloseModal.addEventListener('click', () => {
     bridgeModal.classList.add('hidden');
 });
 
+function fillInterfaceSelect(select, { includeAll, includeDefault }) {
+    if (!select) return;
+    select.innerHTML = '';
+    if (includeAll) {
+        const all = document.createElement('option');
+        all.value = '0.0.0.0';
+        all.textContent = '0.0.0.0 (Todas las placas)';
+        select.appendChild(all);
+    }
+    if (includeDefault) {
+        const def = document.createElement('option');
+        def.value = '';
+        def.textContent = 'Default Route (cualquiera)';
+        select.appendChild(def);
+    }
+}
+
 socket.on('network-interfaces', (interfaces) => {
-    // Keep the "Default Route" option
-    selectOutInterface.innerHTML = '<option value="">Default Route (Any IP)</option>';
-    selectInInterface.innerHTML = '<option value="0.0.0.0">0.0.0.0 (All Interfaces)</option>';
+    const outValue = selOutInterface ? selOutInterface.value : '';
+    fillInterfaceSelect(selArtnetInIface, { includeAll: true });
+    fillInterfaceSelect(selSacnInIface, { includeAll: true });
+    fillInterfaceSelect(selOutInterface, { includeDefault: true });
 
     interfaces.forEach(net => {
-        const optOut = document.createElement('option');
-        optOut.value = net.address;
-        optOut.textContent = `${net.name} - ${net.address}`;
-        selectOutInterface.appendChild(optOut);
-
-        const optIn = document.createElement('option');
-        optIn.value = net.address;
-        optIn.textContent = `${net.name} - ${net.address}`;
-        selectInInterface.appendChild(optIn);
+        const label = `${net.name} - ${net.address}`;
+        [
+            [selArtnetInIface, net.address],
+            [selSacnInIface, net.address],
+            [selOutInterface, net.address],
+        ].forEach(([select, value]) => {
+            if (!select) return;
+            const opt = document.createElement('option');
+            opt.value = value;
+            opt.textContent = value === '127.0.0.1' ? `Localhost - ${value}` : label;
+            select.appendChild(opt);
+        });
     });
+
+    if (selOutInterface && outValue) selOutInterface.value = outValue;
 });
 
-// Receive active bridge config from server
+// Recibe la configuración activa del servidor y refleja el estado en el panel
 socket.on('bridge-config', (config) => {
-    selectInInterface.value = config.inInterface || '0.0.0.0';
-    selectOutInterface.value = config.outInterface || '';
+    const artnetIn = config.artnetIn || { enabled: true, interface: config.inInterface || '0.0.0.0' };
+    const sacnIn = config.sacnIn || { enabled: true, interface: config.inInterface || '0.0.0.0', multicastFrom: 1, multicastTo: 100 };
+    const merge = config.merge || { policy: 'htp', sources: 'both' };
+    const out = config.out || {
+        protocol: 'sacn',
+        interface: config.outInterface || '',
+        targetMode: (String(config.targetIp || '').toLowerCase() === 'multicast') ? 'multicast' : 'unicast',
+        targetIp: config.targetIp || '127.0.0.1',
+        port: null,
+        rate: 30,
+    };
 
-    if (config.targetIp && config.targetIp.toLowerCase() === 'multicast') {
-        radioModeMulticast.checked = true;
-        inputTargetIp.style.display = 'none';
-    } else {
-        radioModeUnicast.checked = true;
-        inputTargetIp.style.display = 'block';
-        inputTargetIp.value = config.targetIp || '127.0.0.1';
+    if (selArtnetInIface) selArtnetInIface.value = artnetIn.interface || '0.0.0.0';
+    if (chkArtnetInEnabled) chkArtnetInEnabled.checked = artnetIn.enabled !== false;
+    if (selSacnInIface) selSacnInIface.value = sacnIn.interface || '0.0.0.0';
+    if (chkSacnInEnabled) chkSacnInEnabled.checked = sacnIn.enabled !== false;
+    if (inSacnMcFrom) inSacnMcFrom.value = sacnIn.multicastFrom ?? 1;
+    if (inSacnMcTo) inSacnMcTo.value = sacnIn.multicastTo ?? 100;
+
+    if (selMergeSources) selMergeSources.value = merge.sources || 'both';
+    if (selMergePolicy) selMergePolicy.value = merge.policy || 'htp';
+
+    if (selOutProtocol) selOutProtocol.value = out.protocol || 'sacn';
+    if (selOutInterface) selOutInterface.value = out.interface || '';
+    if (selOutTargetMode) selOutTargetMode.value = out.targetMode || 'unicast';
+    if (inOutPort) inOutPort.value = out.port || '';
+    if (inOutRate) inOutRate.value = out.rate || 30;
+    if (inputTargetIp) {
+        inputTargetIp.value = out.targetIp || '127.0.0.1';
+        inputTargetIp.style.display = (out.targetMode === 'unicast') ? 'block' : 'none';
     }
 
-    toggleEnableBridge.checked = config.enabled;
-    selectUniverseOffset.value = config.universeOffset || 0;
-    inputMutedUniverses.value = (config.mutedUniverses || []).join(', ');
+    if (toggleEnableBridge) toggleEnableBridge.checked = !!config.enabled;
+    if (selectUniverseOffset) selectUniverseOffset.value = config.universeOffset || 0;
+    if (inputMutedUniverses) inputMutedUniverses.value = (config.mutedUniverses || []).join(', ');
 
     universeOffset = parseInt(config.universeOffset || 0);
 
-    // Refresh UI to show new offset
     updateSelector();
     renderActiveUniverses();
     renderMinimap();
@@ -525,28 +600,83 @@ socket.on('bridge-config', (config) => {
     }
 });
 
-// Save and apply bridge settings
-btnSaveBridge.addEventListener('click', () => {
-    // parse muted universes correctly
-    const mutedStr = inputMutedUniverses.value;
-    const mutedArr = mutedStr.split(',')
+// Detalle de fuentes por universo (qué entrada está presente y quién gana)
+socket.on('unified-info', (info) => {
+    unifiedInfo = info || {};
+    updateSourceBadge();
+});
+
+// Estado del tráfico del bridge
+socket.on('bridge-stats', (st) => {
+    if (!statsText || !st) return;
+    const rec = st.received || {};
+    const sent = st.sent || {};
+    const bound = st.boundTo || {};
+    const lines = [
+        `IN  · Art-Net: ${rec.artnet || 0} paquetes  (escuchando ${bound.artnet || '—'})`,
+        `IN  · sACN: ${rec.sacn || 0} paquetes  (escuchando ${bound.sacn || '—'}${st.multicastGroups ? `, ${st.multicastGroups} grupos multicast` : ''})`,
+        `OUT · Art-Net: ${sent.artnet || 0}  ·  sACN: ${sent.sacn || 0}`,
+    ];
+    if (st.lastSendError) lines.push(`⚠ Último error de envío: ${st.lastSendError}`);
+    statsText.innerHTML = lines.map((l) => `<div>${l}</div>`).join('');
+});
+
+// Muestra/oculta el campo de IP según el modo de destino
+if (selOutTargetMode) {
+    selOutTargetMode.addEventListener('change', () => {
+        if (inputTargetIp) inputTargetIp.style.display = (selOutTargetMode.value === 'unicast') ? 'block' : 'none';
+    });
+}
+
+// Arma el objeto de configuración desde el panel
+function readBridgeConfig() {
+    const mutedArr = inputMutedUniverses.value.split(',')
         .map(v => v.trim())
         .filter(v => v !== '')
         .map(v => parseInt(v))
         .filter(v => !isNaN(v));
 
-    const newConfig = {
-        enabled: toggleEnableBridge.checked,
-        inInterface: selectInInterface.value,
-        outInterface: selectOutInterface.value,
-        targetIp: radioModeMulticast.checked ? 'Multicast' : inputTargetIp.value.trim(),
-        universeOffset: parseInt(selectUniverseOffset.value),
-        mutedUniverses: mutedArr
-    };
+    const portRaw = inOutPort ? inOutPort.value.trim() : '';
 
-    socket.emit('update-bridge-config', newConfig);
+    return {
+        enabled: toggleEnableBridge.checked,
+        artnetIn: {
+            enabled: chkArtnetInEnabled ? chkArtnetInEnabled.checked : true,
+            interface: selArtnetInIface ? selArtnetInIface.value : '0.0.0.0',
+        },
+        sacnIn: {
+            enabled: chkSacnInEnabled ? chkSacnInEnabled.checked : true,
+            interface: selSacnInIface ? selSacnInIface.value : '0.0.0.0',
+            multicastFrom: parseInt(inSacnMcFrom ? inSacnMcFrom.value : 1) || 0,
+            multicastTo: parseInt(inSacnMcTo ? inSacnMcTo.value : 100) || 0,
+            joinMulticast: true,
+        },
+        merge: {
+            policy: selMergePolicy ? selMergePolicy.value : 'htp',
+            sources: selMergeSources ? selMergeSources.value : 'both',
+        },
+        out: {
+            protocol: selOutProtocol ? selOutProtocol.value : 'sacn',
+            interface: selOutInterface ? selOutInterface.value : '',
+            targetMode: selOutTargetMode ? selOutTargetMode.value : 'unicast',
+            targetIp: inputTargetIp ? inputTargetIp.value.trim() : '127.0.0.1',
+            port: portRaw === '' ? null : parseInt(portRaw),
+            rate: parseInt(inOutRate ? inOutRate.value : 30) || 30,
+        },
+        universeOffset: parseInt(selectUniverseOffset.value) || 0,
+        mutedUniverses: mutedArr,
+    };
+}
+
+btnSaveBridge.addEventListener('click', () => {
+    socket.emit('update-bridge-config', readBridgeConfig());
     bridgeModal.classList.add('hidden');
 });
+
+// Deep-link: http://localhost:3000/#bridge abre el panel directamente
+if (location.hash === '#bridge') {
+    bridgeModal.classList.remove('hidden');
+}
 
 // --- PRESETS LOGIC ---
 socket.on('presets-list', (presets) => {
@@ -561,25 +691,8 @@ socket.on('presets-list', (presets) => {
 
 btnSavePreset.addEventListener('click', () => {
     const name = inputPresetName.value.trim();
-    if (!name) return alert("Please enter a preset name");
-
-    const mutedStr = inputMutedUniverses.value;
-    const mutedArr = mutedStr.split(',')
-        .map(v => v.trim())
-        .filter(v => v !== '')
-        .map(v => parseInt(v))
-        .filter(v => !isNaN(v));
-
-    const configToSave = {
-        enabled: toggleEnableBridge.checked,
-        inInterface: selectInInterface.value,
-        outInterface: selectOutInterface.value,
-        targetIp: radioModeMulticast.checked ? 'Multicast' : inputTargetIp.value.trim(),
-        universeOffset: parseInt(selectUniverseOffset.value),
-        mutedUniverses: mutedArr
-    };
-
-    socket.emit('save-preset', { name: name, config: configToSave });
+    if (!name) return alert('Poné un nombre para el preset');
+    socket.emit('save-preset', { name: name, config: readBridgeConfig() });
     inputPresetName.value = '';
 });
 

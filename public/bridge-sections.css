@@ -1,0 +1,138 @@
+/* ============================================================
+   Secciones nuevas del panel de bridge (2 entradas + unificación + salida)
+   ============================================================ */
+
+.cfg-section {
+    padding: 14px 16px;
+    margin-bottom: 14px;
+    border: 1px solid rgba(255, 255, 255, 0.10);
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.03);
+}
+
+.cfg-section h4 {
+    margin: 0 0 12px 0;
+    font-size: 14px;
+    font-weight: 600;
+    letter-spacing: 0.4px;
+    color: #fff;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.cfg-section h4 small {
+    font-weight: 400;
+    opacity: 0.55;
+    font-size: 11px;
+}
+
+.dot-proto {
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    display: inline-block;
+    flex: 0 0 auto;
+}
+
+.dot-proto.artnet {
+    background: #ffb020;
+    box-shadow: 0 0 8px rgba(255, 176, 32, 0.7);
+}
+
+.dot-proto.sacn {
+    background: #00ff88;
+    box-shadow: 0 0 8px rgba(0, 255, 136, 0.7);
+}
+
+.cfg-section .two-cols {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+}
+
+.cfg-section .hint {
+    margin: 8px 0 0 0;
+    font-size: 11.5px;
+    line-height: 1.5;
+    opacity: 0.62;
+}
+
+.cfg-section .hint code {
+    background: rgba(255, 255, 255, 0.10);
+    padding: 1px 5px;
+    border-radius: 4px;
+    font-size: 11px;
+}
+
+/* Inputs y selects ocupan todo el ancho de su columna (los numéricos salían angostos) */
+.cfg-section input[type="text"],
+.cfg-section input[type="number"],
+.cfg-section select {
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.switch-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12.5px;
+    cursor: pointer;
+    opacity: 0.9;
+}
+
+.switch-row input[type="checkbox"] {
+    width: auto;
+    margin: 0;
+}
+
+.stats-text {
+    font-family: 'JetBrains Mono', ui-monospace, Menlo, Consolas, monospace;
+    font-size: 11.5px;
+    line-height: 1.8;
+    opacity: 0.85;
+    color: #00ff88;
+    word-break: break-word;
+}
+
+.source-badge {
+    font-size: 11.5px;
+    opacity: 0.8;
+    line-height: 1.4;
+    margin-top: 4px;
+}
+
+/* Inputs numéricos del panel: sin flechas gigantes */
+.cfg-section input[type="number"] {
+    -moz-appearance: textfield;
+    appearance: textfield;
+}
+
+.cfg-section input[type="number"]::-webkit-outer-spin-button,
+.cfg-section input[type="number"]::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+}
+
+/* Tres botones de protocolo entran cómodos */
+.protocol-toggle {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+
+.protocol-toggle .proto-btn {
+    flex: 1 1 auto;
+    padding: 7px 10px;
+    font-size: 12.5px;
+    white-space: nowrap;
+}
+
+/* El modal scrollea: el pie con "Save & Apply" queda siempre visible */
+.modal-content .modal-footer {
+    position: sticky;
+    bottom: 0;
+    background: inherit;
+    padding-top: 12px;
+}

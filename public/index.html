@@ -1,12 +1,13 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="es">
 
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>DMX / sACN Live Visualizer</title>
+    <title>DMX / sACN Live Visualizer & Bridge</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="bridge-sections.css">
     <script src="/socket.io/socket.io.js"></script>
 </head>
 
@@ -37,6 +38,7 @@
                 <div class="protocol-toggle">
                     <button id="btn-sacn" class="proto-btn active">sACN</button>
                     <button id="btn-artnet" class="proto-btn">Art-Net</button>
+                    <button id="btn-unified" class="proto-btn" title="Estado unificado (lo que sale del bridge)">Unified</button>
                 </div>
             </div>
 
@@ -58,13 +60,14 @@
 
             <div class="system-stats">
                 <p>FPS: <span id="fps-counter">0</span></p>
+                <p id="source-badge" class="source-badge">—</p>
             </div>
         </aside>
 
         <!-- Main Visualizer Area -->
         <main class="glass-panel main-content">
             <header class="main-header">
-                <h1>Universe <span id="current-universe-display">Waiting...</span> Data</h1>
+                <h1><span id="current-protocol-display">sACN</span> Universe <span id="current-universe-display">Waiting...</span></h1>
                 <div class="view-controls">
                     <button id="btn-intensity" class="active">Intensity</button>
                     <button id="btn-values">Values</button>
@@ -91,56 +94,137 @@
     <div id="bridge-modal" class="modal-overlay hidden">
         <div class="glass-panel modal-content">
             <div class="modal-header">
-                <h2>Network Bridge Routing</h2>
+                <h2>Entradas · Unificación · Salida</h2>
                 <button id="close-modal" class="icon-btn">X</button>
             </div>
 
             <div class="modal-body">
-                <div class="form-group">
-                    <label>Art-Net In (Listen Port 6454)</label>
-                    <select id="bridge-in-interface">
-                        <option value="0.0.0.0">0.0.0.0 (All Interfaces)</option>
-                    </select>
-                </div>
-
-                <div class="form-group">
-                    <label>Universe Numbering Offset</label>
-                    <select id="bridge-universe-offset">
-                        <option value="0">Start at Universe 0</option>
-                        <option value="1">Start at Universe 1</option>
-                    </select>
-                </div>
-
-                <div class="form-group">
-                    <label>sACN Out Interface (Virtual VPN/Tailscale)</label>
-                    <select id="bridge-out-interface">
-                        <option value="">Default Route</option>
-                    </select>
-                </div>
-
-                <div class="form-group">
-                    <label>sACN Target Routing Mode</label>
-                    <div style="display: flex; gap: 15px; margin-bottom: 8px; margin-top: 4px;">
-                        <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
-                            <input type="radio" name="targetMode" id="mode-multicast" value="multicast"
-                                style="width: auto;"> Multicast (Recommended)
-                        </label>
-                        <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
-                            <input type="radio" name="targetMode" id="mode-unicast" value="unicast"
-                                style="width: auto;"> Unicast IP
-                        </label>
+                <!-- ============ ENTRADA 1: ART-NET ============ -->
+                <div class="cfg-section">
+                    <h4><span class="dot-proto artnet"></span> Entrada 1 · Art-Net DMX <small>(UDP 6454)</small></h4>
+                    <div class="form-group">
+                        <label>Placa de red que escucha</label>
+                        <select id="artnet-in-interface">
+                            <option value="0.0.0.0">0.0.0.0 (Todas las placas)</option>
+                        </select>
                     </div>
-                    <input type="text" id="bridge-target-ip" placeholder="e.g. 192.168.1.50" value="127.0.0.1"
-                        style="display: none;">
+                    <label class="switch-row">
+                        <input type="checkbox" id="artnet-in-enabled"> Entrada Art-Net activa
+                    </label>
                 </div>
 
-                <div class="form-group">
-                    <label>Muted Universes (Comma Separated)</label>
-                    <input type="text" id="bridge-muted-universes" placeholder="e.g. 0, 1, 5" value="">
+                <!-- ============ ENTRADA 2: sACN ============ -->
+                <div class="cfg-section">
+                    <h4><span class="dot-proto sacn"></span> Entrada 2 · sACN (E1.31) <small>(UDP 5568)</small></h4>
+                    <div class="form-group">
+                        <label>Placa de red que escucha</label>
+                        <select id="sacn-in-interface">
+                            <option value="0.0.0.0">0.0.0.0 (Todas las placas)</option>
+                        </select>
+                    </div>
+                    <div class="form-group two-cols">
+                        <div>
+                            <label>Multicast desde universo</label>
+                            <input type="number" id="sacn-mc-from" value="1" min="0" max="63999">
+                        </div>
+                        <div>
+                            <label>hasta universo</label>
+                            <input type="number" id="sacn-mc-to" value="100" min="0" max="63999">
+                        </div>
+                    </div>
+                    <label class="switch-row">
+                        <input type="checkbox" id="sacn-in-enabled"> Entrada sACN activa
+                    </label>
+                    <p class="hint">Las dos entradas pueden escuchar la <b>misma placa</b>: Art-Net usa 6454 y sACN 5568.
+                        <code>127.0.0.1</code> sirve para probar con software local (QLC+, Resolume).
+                    </p>
                 </div>
-                <!-- Presets Section -->
-                <div class="form-group" style="padding-top: 15px; border-top: 1px solid rgba(255,255,255,0.1);">
-                    <label>Bridge Presets</label>
+
+                <!-- ============ UNIFICACIÓN ============ -->
+                <div class="cfg-section">
+                    <h4>🔀 Unificación de las dos entradas</h4>
+                    <div class="form-group two-cols">
+                        <div>
+                            <label>Qué fuentes se unifican</label>
+                            <select id="merge-sources">
+                                <option value="both">Art-Net + sACN (las dos)</option>
+                                <option value="artnet">Sólo Art-Net</option>
+                                <option value="sacn">Sólo sACN</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label>Modo de mezcla</label>
+                            <select id="merge-policy">
+                                <option value="htp">HTP · gana el valor más alto</option>
+                                <option value="ltp">LTP · gana la fuente más reciente</option>
+                            </select>
+                        </div>
+                    </div>
+                    <p class="hint">Cuando las dos fuentes mandan el mismo universo, HTP mezcla canal por canal tomando el
+                        mayor valor; LTP usa el universo completo de la fuente que llegó último.</p>
+                </div>
+
+                <!-- ============ SALIDA ============ -->
+                <div class="cfg-section">
+                    <h4>📤 Salida</h4>
+                    <div class="form-group two-cols">
+                        <div>
+                            <label>Formato de salida</label>
+                            <select id="out-protocol">
+                                <option value="sacn">sACN (E1.31)</option>
+                                <option value="artnet">Art-Net DMX</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label>Placa de salida</label>
+                            <select id="bridge-out-interface">
+                                <option value="">Default Route (cualquiera)</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>Destino</label>
+                        <select id="out-target-mode">
+                            <option value="multicast">Multicast 239.255.x.y (sólo sACN, recomendado)</option>
+                            <option value="unicast">Unicast a una IP</option>
+                            <option value="broadcast">Broadcast 255.255.255.255 (Art-Net clásico)</option>
+                        </select>
+                        <input type="text" id="bridge-target-ip" placeholder="e.g. 192.168.1.50" style="margin-top: 8px;">
+                    </div>
+                    <div class="form-group two-cols">
+                        <div>
+                            <label>Puerto de salida <small>(vacío = 5568 / 6454)</small></label>
+                            <input type="number" id="out-port" placeholder="5568" min="1" max="65535">
+                        </div>
+                        <div>
+                            <label>Frecuencia de salida (Hz)</label>
+                            <input type="number" id="out-rate" value="30" min="1" max="120">
+                        </div>
+                    </div>
+                    <div class="form-group two-cols">
+                        <div>
+                            <label>Offset de universo</label>
+                            <select id="bridge-universe-offset">
+                                <option value="0">Mostrar desde universo 0</option>
+                                <option value="1">Mostrar desde universo 1</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label>Universos silenciados</label>
+                            <input type="text" id="bridge-muted-universes" placeholder="ej: 0, 1, 5">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ============ ESTADO ============ -->
+                <div class="cfg-section">
+                    <h4>📊 Estado del bridge</h4>
+                    <div id="bridge-stats-text" class="stats-text">—</div>
+                </div>
+
+                <!-- ============ PRESETS ============ -->
+                <div class="cfg-section">
+                    <h4>💾 Presets</h4>
                     <div style="display: flex; gap: 8px; margin-bottom: 8px;">
                         <select id="preset-selector" style="flex: 1;">
                             <option value="" disabled selected>Select a preset...</option>
