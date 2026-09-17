@@ -51,9 +51,8 @@ y funciona como **puente entre dos entradas y dos formatos de salida**.
 - **sACN Internet Tunnel** (`tunnel/`) para mandar luces a un colaborador remoto sin VPN (WebSockets + localtunnel).
 
 ### Tests y herramientas
-- `npm test` — 18 tests (unitarios del codec + **integración UDP real**: Art-Net y sACN entran juntos, se unifican y salen en ambos formatos).
-- `node tools/demo_traffic.js` — genera tráfico Art-Net **y** sACN a la vez para probar el bridge sin consola de luces.
-- **API REST** para automatizar: `GET/POST /api/config`, `GET /api/stats`, `POST /api/reset-stats`.
+- `npm test` — 23 tests (unitarios del codec + **integración UDP real**: Art-Net y sACN entran juntos, se unifican y salen en ambos formatos; incluye el silenciado por entrada y las entradas con protocolo invertido).
+- **API REST** para automatizar: `GET/POST /api/config`, `GET /api/stats`, `POST /api/mute`, `POST /api/reset-stats`.
 
 ---
 
@@ -97,10 +96,10 @@ Clic en el engranaje ⚙️ (o entrá directo a `http://localhost:3000/#bridge`)
 5. `Save & Apply` en el menú, y encendé **Enable Real-Time Conversion** desde la barra lateral (**BRIDGE ON**).
 
 ### 4. Probar sin consola de luces
-```bash
-node tools/demo_traffic.js --seconds 60
-```
-Manda Art-Net y sACN simultáneos (universo 1 con valores distintos en cada protocolo, para ver el efecto del HTP/LTP, y universo 2 con un barrido).
+No hace falta una consola: mandá Art-Net a UDP **6454** y/o sACN a UDP **5568** desde cualquier software
+(QLC+, Resolume, TouchDesigner) apuntando a la placa que elegiste en cada entrada. Los universos aparecen
+solos en la columna izquierda. Para ver el efecto de la unificación, mandá el **mismo universo** por los dos
+protocolos con valores distintos y mirá la vista **Unified**.
 
 ### 5. Automatizar por API
 ```bash
@@ -111,9 +110,12 @@ curl http://localhost:3000/api/stats
 # activar el bridge con salida Art-Net hacia otra placa
 curl -X POST http://localhost:3000/api/config -H "Content-Type: application/json" -d '{
   "enabled": true,
-  "artnetIn": { "enabled": true, "interface": "0.0.0.0" },
-  "sacnIn":   { "enabled": true, "interface": "0.0.0.0", "multicastFrom": 1, "multicastTo": 100 },
-  "merge":    { "policy": "htp", "sources": "both" },
+  "inputs": [
+    { "protocol": "artnet", "enabled": true, "interface": "0.0.0.0", "muted": [] },
+    { "protocol": "sacn", "enabled": true, "interface": "0.0.0.0", "muted": [],
+      "multicastFrom": 1, "multicastTo": 100 }
+  ],
+  "merge":    { "sources": "both" },
   "out":      { "protocol": "artnet", "interface": "192.168.100.120", "targetMode": "broadcast", "port": 6454, "rate": 30 }
 }'
 ```
@@ -126,15 +128,15 @@ Ver `tunnel/` — el HOST genera un link `https://…loca.lt` y el JOINER lo peg
 ## 🧰 Arquitectura
 
 - **Backend (Node.js)**: sockets UDP nativos (`dgram`) — se parsean los `Buffer` crudos por offsets, sin librerías de DMX. El codec y la unificación viven en `lib/dmx.js` (módulo puro y testeable); el servidor en `server.js`.
-- **Unificación**: `SourceRegistry` guarda el último buffer por protocolo y universo con marca de tiempo; en cada tick (30 Hz por defecto) se calcula el estado unificado y se emite en el formato de salida elegido.
+- **Unificación**: `SourceRegistry` guarda el último buffer por **entrada** y universo con marca de tiempo; en cada tick (30 Hz por defecto) se calcula el estado unificado y se emite en el formato de salida elegido.
 - **Frontend (HTML/JS/CSS vanilla)**: sin frameworks. Render con `Uint8Array` + diffing y `CanvasRenderingContext2D` para los minimaps (60 FPS con 46.000 canales entrando).
 
 ```
-lib/dmx.js      codec Art-Net/sACN + merge HTP/LTP + registry
+lib/dmx.js      codec Art-Net/sACN + unificación (HTP) + registry por entrada
 server.js       entradas, unificación, salida, socket.io, API REST
 public/         UI (index.html, app.js, style.css, bridge-sections.css)
 test/           dmx.test.js (unit) + bridge.e2e.test.js (integración UDP)
-tools/          demo_traffic.js (generador de tráfico de prueba)
+tools/          build_portable.py (arma los paquetes portables)
 ```
 
 ---

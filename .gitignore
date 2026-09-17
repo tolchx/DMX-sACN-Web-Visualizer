@@ -6,3 +6,6 @@ node_modules/
 # Para reponerlo: install.bat  (o tools\descargar_runtime.ps1)
 runtime/
 dist/
+
+# Herramientas locales de prueba (no se versionan)
+tools/demo_traffic.js
