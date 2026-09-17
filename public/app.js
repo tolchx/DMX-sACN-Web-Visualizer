@@ -513,7 +513,7 @@ function fillInterfaceSelect(select, { includeAll, includeDefault }) {
     if (includeAll) {
         const all = document.createElement('option');
         all.value = '0.0.0.0';
-        all.textContent = '0.0.0.0 (Todas las placas)';
+        all.textContent = '0.0.0.0 (todas)';
         select.appendChild(all);
     }
     if (includeDefault) {
@@ -530,12 +530,17 @@ socket.on('network-interfaces', (interfaces) => {
     fillInterfaceSelect(selOutInterface, { includeDefault: true });
 
     interfaces.forEach(net => {
-        const label = `${net.name} - ${net.address}`;
+        // Etiqueta corta: IP + nombre del adaptador (los selects de entrada son angostos)
+        const nombre = String(net.name || '').split('\n')[0].trim().slice(0, 22);
+        const etiqueta = net.address === '127.0.0.1'
+            ? '127.0.0.1 (localhost)'
+            : `${net.address} · ${nombre}`;
         [INPUTS[0].iface, INPUTS[1].iface, selOutInterface].forEach((select) => {
             if (!select) return;
             const opt = document.createElement('option');
             opt.value = net.address;
-            opt.textContent = net.address === '127.0.0.1' ? `Localhost - ${net.address}` : label;
+            opt.textContent = etiqueta;
+            opt.title = `${net.name || ''} ${net.address}`.trim();
             select.appendChild(opt);
         });
     });
@@ -546,7 +551,7 @@ socket.on('network-interfaces', (interfaces) => {
 // Cada entrada muestra u oculta sus opciones según el protocolo elegido
 function updateInputVisibility(input) {
     const esSacn = input.protocol.value === 'sacn';
-    if (input.mcWrap) input.mcWrap.style.display = esSacn ? 'grid' : 'none';
+    if (input.mcWrap) input.mcWrap.classList.toggle('oculto', !esSacn);
     if (input.dot) input.dot.className = `dot-proto ${input.protocol.value}`;
 }
 
@@ -695,6 +700,21 @@ btnSaveBridge.addEventListener('click', () => {
 // Deep-link: http://localhost:3000/#bridge abre el menú directamente
 if (location.hash === '#bridge') {
     bridgeModal.classList.remove('hidden');
+}
+
+// Diagnóstico de layout (sólo con ?diag=1): deja las medidas del menú en el título
+if (location.search.includes('diag')) {
+    setTimeout(() => {
+        const body = bridgeModal.querySelector('.modal-body');
+        const card = document.getElementById('card-in1');
+        document.title = [
+            `fit=${body.scrollHeight <= body.clientHeight + 1}`,
+            `scrollH=${body.scrollHeight}`,
+            `clientH=${body.clientHeight}`,
+            `vh=${window.innerHeight}`,
+            `cardH=${card ? Math.round(card.getBoundingClientRect().height) : 0}`,
+        ].join(' ');
+    }, 2500);
 }
 
 // ------------------------------------------------------------------- Presets

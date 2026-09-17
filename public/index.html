@@ -109,116 +109,135 @@
                 <!-- ═══════════ ENTRADAS: los dos módulos a lo ancho ═══════════ -->
                 <div class="grid-2">
                     <div class="cfg-section input-card" id="card-in1">
-                        <h4><span class="dot-proto" id="dot-in1"></span> Entrada 1 <small id="in1-summary"></small></h4>
-                        <div class="form-group two-cols">
-                            <div>
+                        <h4><span class="dot-proto" id="dot-in1"></span> Entrada 1 <small id="in1-summary"></small>
+                            <label class="switch-row inline"><input type="checkbox" id="in1-enabled"> activa</label>
+                        </h4>
+                        <div class="row-in">
+                            <div class="f f-proto">
                                 <label>Protocolo</label>
                                 <select id="in1-protocol">
                                     <option value="artnet">Art-Net DMX</option>
                                     <option value="sacn">sACN (E1.31)</option>
                                 </select>
                             </div>
-                            <div>
+                            <div class="f f-iface">
                                 <label>Placa de red que escucha</label>
                                 <select id="in1-interface">
-                                    <option value="0.0.0.0">0.0.0.0 (Todas)</option>
+                                    <option value="0.0.0.0">0.0.0.0 (todas)</option>
                                 </select>
                             </div>
-                        </div>
-                        <div class="form-group two-cols" id="in1-mc-wrap" style="display: none;">
-                            <div>
-                                <label>Multicast desde</label>
-                                <input type="number" id="in1-mc-from" value="1" min="0" max="63999">
+                            <div class="mc-fields" id="in1-mc-wrap">
+                                <div class="f f-num">
+                                    <label>Multicast desde</label>
+                                    <input type="number" id="in1-mc-from" value="1" min="0" max="63999">
+                                </div>
+                                <div class="f f-num">
+                                    <label>hasta</label>
+                                    <input type="number" id="in1-mc-to" value="100" min="0" max="63999">
+                                </div>
                             </div>
-                            <div>
-                                <label>hasta universo</label>
-                                <input type="number" id="in1-mc-to" value="100" min="0" max="63999">
-                            </div>
                         </div>
-                        <label class="switch-row">
-                            <input type="checkbox" id="in1-enabled"> Entrada activa
-                        </label>
-                        <div class="form-group">
-                            <label>Universos silenciados <small>(en esta entrada)</small></label>
-                            <input type="text" id="in1-muted" placeholder="ej: 0, 1, 5">
-                            <div class="chips" id="in1-chips"></div>
-                            <p class="hint">Clic en un universo activo para silenciarlo o reactivarlo.</p>
+                        <div class="form-group tight">
+                            <label>Universos silenciados <small>(en esta entrada) — clic en un chip para silenciar</small></label>
+                            <div class="muted-row">
+                                <input type="text" id="in1-muted" placeholder="ej: 0, 1, 5">
+                                <div class="chips" id="in1-chips"></div>
+                            </div>
                         </div>
                     </div>
 
                     <div class="cfg-section input-card" id="card-in2">
-                        <h4><span class="dot-proto" id="dot-in2"></span> Entrada 2 <small id="in2-summary"></small></h4>
-                        <div class="form-group two-cols">
-                            <div>
+                        <h4><span class="dot-proto" id="dot-in2"></span> Entrada 2 <small id="in2-summary"></small>
+                            <label class="switch-row inline"><input type="checkbox" id="in2-enabled"> activa</label>
+                        </h4>
+                        <div class="row-in">
+                            <div class="f f-proto">
                                 <label>Protocolo</label>
                                 <select id="in2-protocol">
                                     <option value="artnet">Art-Net DMX</option>
                                     <option value="sacn">sACN (E1.31)</option>
                                 </select>
                             </div>
-                            <div>
+                            <div class="f f-iface">
                                 <label>Placa de red que escucha</label>
                                 <select id="in2-interface">
-                                    <option value="0.0.0.0">0.0.0.0 (Todas)</option>
+                                    <option value="0.0.0.0">0.0.0.0 (todas)</option>
                                 </select>
                             </div>
-                        </div>
-                        <div class="form-group two-cols" id="in2-mc-wrap" style="display: none;">
-                            <div>
-                                <label>Multicast desde</label>
-                                <input type="number" id="in2-mc-from" value="1" min="0" max="63999">
+                            <div class="mc-fields" id="in2-mc-wrap">
+                                <div class="f f-num">
+                                    <label>Multicast desde</label>
+                                    <input type="number" id="in2-mc-from" value="1" min="0" max="63999">
+                                </div>
+                                <div class="f f-num">
+                                    <label>hasta</label>
+                                    <input type="number" id="in2-mc-to" value="100" min="0" max="63999">
+                                </div>
                             </div>
-                            <div>
-                                <label>hasta universo</label>
-                                <input type="number" id="in2-mc-to" value="100" min="0" max="63999">
-                            </div>
                         </div>
-                        <label class="switch-row">
-                            <input type="checkbox" id="in2-enabled"> Entrada activa
-                        </label>
-                        <div class="form-group">
-                            <label>Universos silenciados <small>(en esta entrada)</small></label>
-                            <input type="text" id="in2-muted" placeholder="ej: 0, 1, 5">
-                            <div class="chips" id="in2-chips"></div>
-                            <p class="hint">Clic en un universo activo para silenciarlo o reactivarlo.</p>
+                        <div class="form-group tight">
+                            <label>Universos silenciados <small>(en esta entrada) — clic en un chip para silenciar</small></label>
+                            <div class="muted-row">
+                                <input type="text" id="in2-muted" placeholder="ej: 0, 1, 5">
+                                <div class="chips" id="in2-chips"></div>
+                            </div>
                         </div>
                     </div>
                 </div>
 
-                <!-- ═══════════ UNIFICACIÓN ═══════════ -->
-                <div class="cfg-section">
-                    <h4>🔀 Unificación</h4>
-                    <div class="form-group">
-                        <label>Qué fuente se unifica</label>
-                        <select id="merge-sources">
-                            <option value="both">Fuente 1 + Fuente 2</option>
-                            <option value="input1">Sólo Fuente 1</option>
-                            <option value="input2">Sólo Fuente 2</option>
-                        </select>
+                <!-- ═══════════ UNIFICACIÓN + PRESETS (lado a lado) ═══════════ -->
+                <div class="grid-2">
+                    <div class="cfg-section">
+                        <h4>🔀 Unificación</h4>
+                        <div class="form-group">
+                            <label>Qué fuente se unifica</label>
+                            <select id="merge-sources">
+                                <option value="both">Fuente 1 + Fuente 2</option>
+                                <option value="input1">Sólo Fuente 1</option>
+                                <option value="input2">Sólo Fuente 2</option>
+                            </select>
+                        </div>
+                        <p class="hint">Silenciando los universos correctos en cada entrada, cada universo queda alimentado por
+                            una sola fuente y la unificación sale limpia. La mezcla interna es HTP (mayor valor) y sólo
+                            actúa si las dos entradas traen el mismo universo.</p>
                     </div>
-                    <p class="hint">Silenciando los universos correctos en cada entrada, cada universo queda alimentado por
-                        una sola fuente y la unificación sale limpia (sin pisarse). La mezcla interna es por mayor valor
-                        (HTP) y sólo actúa si las dos entradas traen el mismo universo.</p>
+
+                    <div class="cfg-section">
+                        <h4>💾 Presets</h4>
+                        <div class="form-group">
+                            <label>Guardar / cargar configuración</label>
+                            <div class="row-preset">
+                                <select id="preset-selector">
+                                    <option value="" disabled selected>Select a preset...</option>
+                                </select>
+                                <button id="btn-load-preset" class="mini-btn">Load</button>
+                            </div>
+                        </div>
+                        <div class="row-preset">
+                            <input type="text" id="preset-name" placeholder="Nombre del preset">
+                            <button id="btn-save-preset" class="mini-btn ok">Save</button>
+                        </div>
+                    </div>
                 </div>
 
                 <!-- ═══════════ SALIDA ═══════════ -->
                 <div class="cfg-section">
                     <h4>📤 Salida</h4>
                     <div class="grid-3">
-                        <div class="form-group">
+                        <div class="f">
                             <label>Formato de salida</label>
                             <select id="out-protocol">
                                 <option value="sacn">sACN (E1.31)</option>
                                 <option value="artnet">Art-Net DMX</option>
                             </select>
                         </div>
-                        <div class="form-group">
+                        <div class="f">
                             <label>Placa de salida</label>
                             <select id="bridge-out-interface">
                                 <option value="">Default Route</option>
                             </select>
                         </div>
-                        <div class="form-group">
+                        <div class="f">
                             <label>Destino</label>
                             <select id="out-target-mode">
                                 <option value="multicast">Multicast 239.255.x.y</option>
@@ -227,42 +246,26 @@
                             </select>
                         </div>
                     </div>
-                    <div class="grid-3">
-                        <div class="form-group">
+                    <div class="grid-4">
+                        <div class="f">
                             <label>IP destino</label>
                             <input type="text" id="bridge-target-ip" placeholder="192.168.1.50">
                         </div>
-                        <div class="form-group">
-                            <label>Puerto <small>(vacío = 5568 / 6454)</small></label>
-                            <input type="number" id="out-port" placeholder="5568" min="1" max="65535">
+                        <div class="f">
+                            <label>Puerto</label>
+                            <input type="number" id="out-port" placeholder="5568">
                         </div>
-                        <div class="form-group">
+                        <div class="f">
                             <label>Frecuencia (Hz)</label>
                             <input type="number" id="out-rate" value="30" min="1" max="120">
                         </div>
-                    </div>
-                    <div class="form-group">
-                        <label>Offset de numeración de universo</label>
-                        <select id="bridge-universe-offset">
-                            <option value="0">Mostrar desde universo 0</option>
-                            <option value="1">Mostrar desde universo 1</option>
-                        </select>
-                    </div>
-                </div>
-
-                <!-- ═══════════ PRESETS ═══════════ -->
-                <div class="cfg-section">
-                    <h4>💾 Presets</h4>
-                    <div style="display: flex; gap: 8px; margin-bottom: 8px;">
-                        <select id="preset-selector" style="flex: 1;">
-                            <option value="" disabled selected>Select a preset...</option>
-                        </select>
-                        <button id="btn-load-preset" class="icon-btn" style="padding: 0 12px;">Load</button>
-                    </div>
-                    <div style="display: flex; gap: 8px;">
-                        <input type="text" id="preset-name" placeholder="Preset name" style="flex: 1;">
-                        <button id="btn-save-preset" class="icon-btn"
-                            style="padding: 0 12px; background: rgba(0, 255, 136, 0.2);">Save</button>
+                        <div class="f">
+                            <label>Offset de universo</label>
+                            <select id="bridge-universe-offset">
+                                <option value="0">Desde 0</option>
+                                <option value="1">Desde 1</option>
+                            </select>
+                        </div>
                     </div>
                 </div>
             </div>
