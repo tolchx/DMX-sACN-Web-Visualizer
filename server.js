@@ -1,12 +1,13 @@
 'use strict';
 /**
- * DMX / sACN Web Visualizer & Network Bridge
+ * DMX / sACN Web Visualizer & Network Bridge — v2.1
  *
- * Entradas (cada una con su propia placa de red, ambas pueden escuchar a la vez):
- *   - Art-Net DMX  (UDP 6454)
- *   - sACN E1.31   (UDP 5568, unicast + multicast 239.255.x.y)
- * Unificación: HTP (el valor más alto) o LTP (la fuente más reciente).
- * Salida: sACN o Art-Net DMX, hacia multicast / unicast / broadcast, con placa elegible.
+ * DOS ENTRADAS GENÉRICAS: cada una elige su protocolo (Art-Net o sACN), su placa de
+ * red y sus universos silenciados. Las dos pueden escuchar a la vez y compartir placa.
+ * Unificación: qué fuente se unifica (entrada 1, entrada 2 o ambas). La mezcla interna
+ * es HTP (el valor más alto por canal), que sólo actúa si las dos traen el mismo universo.
+ * SALIDA: sACN o Art-Net DMX hacia multicast / unicast / broadcast, con placa, puerto y
+ * frecuencia configurables.
  */
 
 const express = require('express');
@@ -21,48 +22,12 @@ const path = require('path');
 const dmx = require('./lib/dmx');
 
 const PRESETS_DIR = path.join(__dirname, 'presets');
-
-const DEFAULT_CONFIG = {
-    enabled: false,
-    // --- Entrada Art-Net ---
-    artnetIn: {
-        enabled: true,
-        interface: '0.0.0.0', // '0.0.0.0' = todas las placas, o una IP concreta (incluye 127.0.0.1)
-    },
-    // --- Entrada sACN ---
-    sacnIn: {
-        enabled: true,
-        interface: '0.0.0.0',
-        multicastFrom: 1,
-        multicastTo: 100,
-        joinMulticast: true,
-    },
-    // --- Unificación ---
-    merge: {
-        policy: 'htp',        // 'htp' | 'ltp'
-        sources: 'both',      // 'both' | 'artnet' | 'sacn'
-    },
-    // --- Salida ---
-    out: {
-        protocol: 'sacn',     // 'sacn' | 'artnet'
-        interface: '',        // '' = ruta por defecto
-        targetMode: 'multicast', // 'multicast' | 'unicast' | 'broadcast'
-        targetIp: '127.0.0.1',
-        port: null,           // null = 5568 para sACN / 6454 para Art-Net
-        rate: 30,             // Hz del bucle de salida
-    },
-    universeOffset: 0,
-    mutedUniverses: [],
-};
-
-function isIPv4(addr) {
-    return typeof addr === 'string' && addr.split('.').length === 4 && !addr.includes(':');
-}
+const INPUT_LABEL = ['Entrada 1', 'Entrada 2'];
 
 function createApp(opts = {}) {
     const httpPort = opts.port || process.env.PORT || 3000;
-    const artnetInPort = opts.artnetInPort || dmx.ARTNET_PORT;
-    const sacnInPort = opts.sacnInPort || dmx.SACN_PORT;
+    const artnetPort = opts.artnetInPort || dmx.ARTNET_PORT;
+    const sacnPort = opts.sacnInPort || dmx.SACN_PORT;
     const verbose = opts.verbose !== false;
 
     if (!fs.existsSync(PRESETS_DIR)) fs.mkdirSync(PRESETS_DIR, { recursive: true });
@@ -75,179 +40,137 @@ function createApp(opts = {}) {
 
     const registry = new dmx.SourceRegistry(4000);
     const bridgeCid = crypto.randomBytes(16);
-    const sequences = new Map(); // "proto:universe" -> seq
+    const sequences = new Map();
 
-    let config = dmx.normalizeConfig({}, DEFAULT_CONFIG);
+    let config = dmx.normalizeConfig({}, dmx.DEFAULT_CONFIG);
+
     const stats = {
-        received: { artnet: 0, sacn: 0 },
+        received: [{ paquetes: 0, universos: 0 }, { paquetes: 0, universos: 0 }],
         sent: { artnet: 0, sacn: 0 },
         lastSendError: null,
         lastSendAt: null,
-        boundTo: { artnet: null, sacn: null, out: null },
-        multicastGroups: 0,
+        boundTo: [null, null],
+        multicastGroups: [0, 0],
+        droppedMuted: [0, 0],
     };
 
-    // ---------------------------------------------------------------- recepción
-    let artnetSocket = null;
-    let sacnSocket = null;
+    let inputSockets = [null, null];
+    let outSocket = dgram.createSocket('udp4');
 
     function log(...args) {
         if (verbose) console.log(...args);
     }
 
-    function listenInterface(iface) {
-        // '0.0.0.0' / '' => todas las placas (bind sin dirección)
-        return !iface || iface === '0.0.0.0' ? undefined : iface;
+    const ifaceAddr = (iface) => (!iface || iface === '0.0.0.0' ? undefined : iface);
+    const portFor = (protocol) => (protocol === 'sacn' ? sacnPort : artnetPort);
+
+    // ---------------------------------------------------------------- recepción
+    function closeInput(i) {
+        const sock = inputSockets[i];
+        if (!sock) return;
+        try { sock.dropMembership && sock.dropMembership(); } catch (e) { /* ignorado */ }
+        try { sock.close(); } catch (e) { /* ignorado */ }
+        inputSockets[i] = null;
     }
 
-    function closeArtnet() {
-        if (artnetSocket) {
-            try { artnetSocket.close(); } catch (e) { /* ignorado */ }
-            artnetSocket = null;
-        }
-    }
+    function bindInput(i) {
+        closeInput(i);
+        const entrada = config.inputs[i];
+        stats.boundTo[i] = null;
+        stats.multicastGroups[i] = 0;
+        if (!entrada.enabled) return;
 
-    function closeSacn() {
-        if (sacnSocket) {
-            try { sacnSocket.dropMembership?.(); } catch (e) { /* ignorado */ }
-            try { sacnSocket.close(); } catch (e) { /* ignorado */ }
-            sacnSocket = null;
-        }
-    }
-
-    function bindArtnet() {
-        closeArtnet();
-        if (!config.artnetIn.enabled) {
-            stats.boundTo.artnet = null;
-            return;
-        }
-        const addr = listenInterface(config.artnetIn.interface);
+        const addr = ifaceAddr(entrada.interface);
+        const port = portFor(entrada.protocol);
         const sock = dgram.createSocket({ type: 'udp4', reuseAddr: true });
-        sock.on('error', (err) => log(`[Art-Net IN] error: ${err.message}`));
+
+        sock.on('error', (err) => log(`[${INPUT_LABEL[i]}] error: ${err.message}`));
         sock.on('message', (msg) => {
-            const parsed = dmx.parseArtNetDmx(msg);
+            const parsed = dmx.parseFor(entrada.protocol, msg);
             if (!parsed) return;
-            stats.received.artnet++;
-            registry.update('artnet', parsed.universe, parsed.data);
-            io.to(`artnet-${parsed.universe}`).to('artnet-all').emit('dmx-data', {
-                protocol: 'ArtNet',
+
+            // Silenciado POR ENTRADA: si el universo está silenciado acá, no entra al sistema
+            if (dmx.isMutedInInput(i, config, parsed.universe)) {
+                stats.droppedMuted[i]++;
+                return;
+            }
+
+            stats.received[i].paquetes++;
+            registry.update(i, parsed.universe, parsed.data);
+
+            io.to(`in${i + 1}-${parsed.universe}`).to(`in${i + 1}-all`).emit('dmx-data', {
+                protocol: i === 0 ? 'Entrada1' : 'Entrada2',
+                input: i,
+                proto: entrada.protocol,
                 universe: parsed.universe,
                 data: Array.from(parsed.data),
             });
         });
-        sock.bind(artnetInPort, addr, () => {
-            stats.boundTo.artnet = addr || '0.0.0.0';
-            log(`[Art-Net IN] escuchando en ${stats.boundTo.artnet}:${artnetInPort}`);
-        });
-        artnetSocket = sock;
-    }
 
-    function bindSacn() {
-        closeSacn();
-        if (!config.sacnIn.enabled) {
-            stats.boundTo.sacn = null;
-            return;
-        }
-        const addr = listenInterface(config.sacnIn.interface);
-        const sock = dgram.createSocket({ type: 'udp4', reuseAddr: true });
-        sock.on('error', (err) => log(`[sACN IN] error: ${err.message}`));
-        sock.on('message', (msg) => {
-            const parsed = dmx.parseSacn(msg);
-            if (!parsed) return;
-            stats.received.sacn++;
-            registry.update('sacn', parsed.universe, parsed.data);
-            io.to(`sacn-${parsed.universe}`).to('sacn-all').emit('dmx-data', {
-                protocol: 'sACN',
-                universe: parsed.universe,
-                data: Array.from(parsed.data),
-            });
-        });
-        sock.bind(sacnInPort, addr, () => {
-            stats.boundTo.sacn = addr || '0.0.0.0';
-            log(`[sACN IN] escuchando en ${stats.boundTo.sacn}:${sacnInPort}`);
+        sock.bind(port, addr, () => {
+            stats.boundTo[i] = addr || '0.0.0.0';
+            log(`[${INPUT_LABEL[i]}] ${entrada.protocol.toUpperCase()} escuchando en ${stats.boundTo[i]}:${port}`);
 
-            // Unirse a los grupos multicast: permite recibir sACN multicast además del unicast
-            if (config.sacnIn.joinMulticast) {
-                const iface = addr; // undefined = default; si es una IP concreta, se une por esa placa
+            if (entrada.protocol === 'sacn' && entrada.joinMulticast) {
+                const from = Math.min(entrada.multicastFrom, entrada.multicastTo);
+                const to = Math.min(Math.max(entrada.multicastFrom, entrada.multicastTo), from + 512);
                 let joined = 0;
-                const from = Math.min(config.sacnIn.multicastFrom, config.sacnIn.multicastTo);
-                const to = Math.min(Math.max(config.sacnIn.multicastFrom, config.sacnIn.multicastTo), from + 512);
                 for (let u = from; u <= to; u++) {
                     try {
-                        sock.addMembership(dmx.sacnMulticastIp(u), iface);
+                        sock.addMembership(dmx.sacnMulticastIp(u), addr);
                         joined++;
-                    } catch (e) {
-                        // Grupo ya unido o placa sin soporte multicast: se ignora
-                    }
+                    } catch (e) { /* grupo ya unido o sin soporte multicast */ }
                 }
-                stats.multicastGroups = joined;
-                log(`[sACN IN] unido a ${joined} grupos multicast (universos ${from}-${to})`);
+                stats.multicastGroups[i] = joined;
+                log(`[${INPUT_LABEL[i]}] unido a ${joined} grupos multicast (universos ${from}-${to})`);
             }
         });
-        sacnSocket = sock;
+
+        inputSockets[i] = sock;
     }
 
     // ------------------------------------------------------------------- salida
-    let outSocket = dgram.createSocket('udp4');
-
     function rebindOut() {
         try { outSocket.close(); } catch (e) { /* ignorado */ }
         outSocket = dgram.createSocket('udp4');
         outSocket.on('error', (err) => { stats.lastSendError = err.message; });
-        const iface = listenInterface(config.out.interface);
         try {
-            outSocket.bind(0, iface, () => {
-                stats.boundTo.out = iface || 'default';
-                log(`[OUT] socket de salida en ${stats.boundTo.out}`);
+            outSocket.bind(0, ifaceAddr(config.out.interface), () => {
+                log(`[OUT] socket de salida en ${ifaceAddr(config.out.interface) || 'default'}`);
             });
-        } catch (e) {
-            stats.boundTo.out = 'default';
-        }
-        try {
-            outSocket.setBroadcast(true);
         } catch (e) { /* ignorado */ }
+        try { outSocket.setBroadcast(true); } catch (e) { /* ignorado */ }
     }
-    rebindOut();
 
     function targetFor(universe) {
         const out = config.out;
         if (out.targetMode === 'broadcast') return '255.255.255.255';
         if (out.targetMode === 'unicast') return out.targetIp || '127.0.0.1';
-        // multicast (sólo tiene sentido en sACN)
         return out.protocol === 'sacn' ? dmx.sacnMulticastIp(universe) : (out.targetIp || '255.255.255.255');
     }
 
-    function outPort() {
-        if (config.out.port) return config.out.port;
-        return config.out.protocol === 'artnet' ? dmx.ARTNET_PORT : dmx.SACN_PORT;
-    }
+    const outPort = () => config.out.port || (config.out.protocol === 'artnet' ? artnetPort : sacnPort);
 
     function sendUniverse(universe, slots) {
         const visualizerUni = universe + (config.universeOffset || 0);
-        if (config.mutedUniverses && config.mutedUniverses.includes(visualizerUni)) return;
-
         const destIp = targetFor(visualizerUni);
-        const port = outPort();
         const key = `${config.out.protocol}:${universe}`;
         let seq = (sequences.get(key) || 0) + 1;
         if (seq > 255) seq = 0;
         sequences.set(key, seq);
 
-        let packet;
-        if (config.out.protocol === 'artnet') {
-            packet = dmx.buildArtNetDmx(visualizerUni, slots, seq);
-        } else {
-            packet = dmx.buildSacn(visualizerUni, slots, { cid: bridgeCid, sequence: seq, priority: 100 });
-        }
+        const packet = config.out.protocol === 'artnet'
+            ? dmx.buildArtNetDmx(visualizerUni, slots, seq)
+            : dmx.buildSacn(visualizerUni, slots, { cid: bridgeCid, sequence: seq, priority: 100 });
 
         if (config.out.targetMode === 'multicast' && config.out.protocol === 'sacn') {
             try {
-                outSocket.setMulticastInterface(listenInterface(config.out.interface) || '0.0.0.0');
+                outSocket.setMulticastInterface(ifaceAddr(config.out.interface) || '0.0.0.0');
                 outSocket.setMulticastTTL(32);
             } catch (e) { /* ignorado */ }
         }
 
-        outSocket.send(packet, 0, packet.length, port, destIp, (err) => {
+        outSocket.send(packet, 0, packet.length, outPort(), destIp, (err) => {
             if (err) {
                 stats.lastSendError = err.message;
             } else {
@@ -262,7 +185,7 @@ function createApp(opts = {}) {
     function bridgeTick() {
         if (!config.enabled) return;
         registry.purge();
-        const merged = registry.unifiedAll(config.merge.policy, config.merge.sources);
+        const merged = registry.unifiedAll('htp', config.merge.sources);
         for (const [universe, entry] of merged.entries()) {
             sendUniverse(universe, entry.data);
         }
@@ -276,29 +199,28 @@ function createApp(opts = {}) {
     startBridgeLoop();
 
     // ------------------------------------------------------------- estado -> UI
-    const stateTimer = setInterval(() => {
-        registry.purge();
-        const merged = registry.unifiedAll(config.merge.policy, config.merge.sources);
-
-        io.emit('active-universes', {
-            sACN: registry.activeFor('sacn'),
-            ArtNet: registry.activeFor('artnet'),
-            Unified: Array.from(merged.keys()),
-        });
-
-        // Detalle por universo: qué fuente está presente y quién gana
+    function snapshot(now = Date.now()) {
+        registry.purge(now);
+        const merged = registry.unifiedAll('htp', config.merge.sources);
         const detail = {};
         for (const [uni, entry] of merged.entries()) {
             detail[uni] = { winner: entry.winner, present: entry.present };
         }
-        io.emit('unified-info', detail);
+        for (let i = 0; i < 2; i++) stats.received[i].universos = registry.activeFor(i).length;
+        return { merged, detail };
+    }
 
-        // Datos unificados (para la vista "Unified" del visor)
+    const stateTimer = setInterval(() => {
+        const { merged, detail } = snapshot();
+        io.emit('active-universes', {
+            input1: registry.activeFor(0),
+            input2: registry.activeFor(1),
+            Unified: Array.from(merged.keys()),
+        });
+        io.emit('unified-info', detail);
         for (const [uni, entry] of merged.entries()) {
             io.to(`unified-${uni}`).to('unified-all').emit('dmx-data', {
-                protocol: 'Unified',
-                universe: uni,
-                data: Array.from(entry.data),
+                protocol: 'Unified', universe: uni, data: Array.from(entry.data),
             });
         }
     }, 500);
@@ -308,27 +230,41 @@ function createApp(opts = {}) {
     // ---------------------------------------------------------------- socket.io
     io.on('connection', (socket) => {
         log(`Cliente conectado: ${socket.id}`);
-        socket.emit('active-universes', {
-            sACN: registry.activeFor('sacn'),
-            ArtNet: registry.activeFor('artnet'),
-            Unified: Array.from(registry.unifiedAll(config.merge.policy, config.merge.sources).keys()),
-        });
         socket.emit('bridge-config', config);
         socket.emit('bridge-stats', stats);
+        const { detail } = snapshot();
+        socket.emit('active-universes', {
+            input1: registry.activeFor(0),
+            input2: registry.activeFor(1),
+            Unified: Array.from(registry.unifiedAll('htp', config.merge.sources).keys()),
+        });
+        socket.emit('unified-info', detail);
 
         socket.on('join-universe', (payload) => {
-            let protocol = 'sACN';
+            let protocol = 'input1';
             let universeId = payload;
             if (typeof payload === 'object' && payload !== null) {
                 protocol = payload.protocol;
                 universeId = payload.universeId;
             }
             socket.rooms.forEach((room) => {
-                if (/^(sacn|artnet|unified)-/.test(room)) socket.leave(room);
+                if (/^(in1|in2|unified)-/.test(room)) socket.leave(room);
             });
-            const prefix = protocol === 'ArtNet' ? 'artnet' : (protocol === 'Unified' ? 'unified' : 'sacn');
+            const prefix = protocol === 'Unified' ? 'unified' : (protocol === 'input2' ? 'in2' : 'in1');
             socket.join(`${prefix}-all`);
             if (universeId !== 'all') socket.join(`${prefix}-${universeId}`);
+        });
+
+        // Silenciar/dessilenciar un universo en una entrada (desde los chips del menú)
+        socket.on('toggle-universe-mute', ({ input, universe }) => {
+            const i = parseInt(input, 10);
+            const u = parseInt(universe, 10);
+            if (isNaN(i) || isNaN(u) || !config.inputs[i]) return;
+            const muted = dmx.toggleMuted(config, i, u);
+            // al silenciar, se descarta lo que ya estaba en el buffer de esa entrada
+            if (muted) registry.sources[i].delete(u);
+            io.emit('bridge-config', config);
+            log(`[mute] ${INPUT_LABEL[i]} universo ${u} -> ${muted ? 'SILENCIADO' : 'activo'}`);
         });
 
         socket.on('get-network-interfaces', () => socket.emit('network-interfaces', listInterfaces()));
@@ -339,15 +275,15 @@ function createApp(opts = {}) {
         });
         socket.on('save-preset', ({ name, config: presetConfig }) => {
             if (!name || !presetConfig) return;
-            const safe = name.replace(/[^a-z0-9_-]/gi, '_');
-            fs.writeFile(path.join(PRESETS_DIR, `${safe}.json`), JSON.stringify(presetConfig, null, 2), (err) => {
+            const safe = String(name).replace(/[^a-z0-9_-]/gi, '_');
+            const normalized = dmx.normalizeConfig(presetConfig, dmx.DEFAULT_CONFIG);
+            fs.writeFile(path.join(PRESETS_DIR, `${safe}.json`), JSON.stringify(normalized, null, 2), (err) => {
                 if (!err) io.emit('presets-list', listPresets());
             });
         });
         socket.on('load-preset', (name) => {
             const safe = String(name).replace(/[^a-z0-9_-]/gi, '_');
-            const file = path.join(PRESETS_DIR, `${safe}.json`);
-            fs.readFile(file, 'utf8', (err, raw) => {
+            fs.readFile(path.join(PRESETS_DIR, `${safe}.json`), 'utf8', (err, raw) => {
                 if (err) return;
                 try {
                     applyConfig(JSON.parse(raw));
@@ -356,50 +292,56 @@ function createApp(opts = {}) {
                     console.error('Preset inválido:', e.message);
                 }
             });
-            // listback para el botón "Load"
-            socket.emit('presets-list', listPresets());
         });
+        socket.on('disconnect', () => log(`Cliente desconectado: ${socket.id}`));
     });
 
     // -------------------------------------------------------------------- API
-    app.get('/api/config', (req, res) => res.json({ config, stats, interfaces: listInterfaces() }));
+    app.get('/api/config', (req, res) => res.json({
+        config,
+        stats,
+        interfaces: listInterfaces(),
+        active: { input1: registry.activeFor(0), input2: registry.activeFor(1) },
+    }));
     app.post('/api/config', (req, res) => {
         applyConfig(req.body || {});
         io.emit('bridge-config', config);
         res.json({ ok: true, config });
     });
-    app.get('/api/stats', (req, res) => res.json({ stats, boundTo: stats.boundTo }));
+    app.get('/api/stats', (req, res) => res.json({ stats }));
     app.post('/api/reset-stats', (req, res) => {
-        stats.received.artnet = 0;
-        stats.received.sacn = 0;
-        stats.sent.artnet = 0;
-        stats.sent.sacn = 0;
+        stats.received = [{ paquetes: 0, universos: 0 }, { paquetes: 0, universos: 0 }];
+        stats.sent = { artnet: 0, sacn: 0 };
+        stats.droppedMuted = [0, 0];
         res.json({ ok: true });
+    });
+    // Silenciar por API (para automatizar / probar)
+    app.post('/api/mute', (req, res) => {
+        const i = parseInt(req.body.input, 10);
+        const u = parseInt(req.body.universe, 10);
+        if (isNaN(i) || isNaN(u) || !config.inputs[i]) return res.status(400).json({ ok: false, error: 'input/universe inválidos' });
+        const muted = dmx.toggleMuted(config, i, u);
+        if (muted) registry.sources[i].delete(u);
+        io.emit('bridge-config', config);
+        res.json({ ok: true, muted, config });
     });
 
     // ------------------------------------------------------------- config apply
     function applyConfig(partial) {
-        const before = {
-            artnetIface: config.artnetIn.interface,
-            artnetEnabled: config.artnetIn.enabled,
-            sacnIface: config.sacnIn.interface,
-            sacnEnabled: config.sacnIn.enabled,
-            sacnFrom: config.sacnIn.multicastFrom,
-            sacnTo: config.sacnIn.multicastTo,
-            outIface: config.out.interface,
-        };
+        const antes = config.inputs.map((e) => ({ protocol: e.protocol, enabled: e.enabled, interface: e.interface, from: e.multicastFrom, to: e.multicastTo }));
+        const outIfaceAntes = config.out.interface;
 
-        config = dmx.normalizeConfig({ ...config, ...partial }, DEFAULT_CONFIG);
+        config = dmx.normalizeConfig(Object.assign({}, config, partial), dmx.DEFAULT_CONFIG);
 
-        if (config.artnetIn.interface !== before.artnetIface || config.artnetIn.enabled !== before.artnetEnabled) {
-            bindArtnet();
+        for (let i = 0; i < 2; i++) {
+            const a = antes[i];
+            const b = config.inputs[i];
+            if (a.protocol !== b.protocol || a.enabled !== b.enabled || a.interface !== b.interface
+                || a.from !== b.multicastFrom || a.to !== b.multicastTo) {
+                bindInput(i);
+            }
         }
-        const sacnChanged = config.sacnIn.interface !== before.sacnIface
-            || config.sacnIn.enabled !== before.sacnEnabled
-            || config.sacnIn.multicastFrom !== before.sacnFrom
-            || config.sacnIn.multicastTo !== before.sacnTo;
-        if (sacnChanged) bindSacn();
-        if (config.out.interface !== before.outIface) rebindOut();
+        if (config.out.interface !== outIfaceAntes) rebindOut();
         if (config.enabled) startBridgeLoop();
     }
 
@@ -430,13 +372,14 @@ function createApp(opts = {}) {
 
     // ------------------------------------------------------------------ arranque
     function start() {
-        bindArtnet();
-        bindSacn();
+        bindInput(0);
+        bindInput(1);
+        rebindOut();
         return new Promise((resolve) => {
             server.listen(httpPort, '0.0.0.0', () => {
-                log(`[+] Visualizer en http://localhost:${httpPort}`);
-                log(`[+] Art-Net IN en UDP ${artnetInPort} · sACN IN en UDP ${sacnInPort}`);
-                resolve({ httpPort, artnetInPort, sacnInPort });
+                log(`[+] Panel en http://localhost:${httpPort}`);
+                log(`[+] Art-Net UDP ${artnetPort} · sACN UDP ${sacnPort}`);
+                resolve({ httpPort, artnetInPort: artnetPort, sacnInPort: sacnPort });
             });
         });
     }
@@ -445,8 +388,8 @@ function createApp(opts = {}) {
         if (bridgeTimer) clearInterval(bridgeTimer);
         clearInterval(stateTimer);
         clearInterval(statsTimer);
-        closeArtnet();
-        closeSacn();
+        closeInput(0);
+        closeInput(1);
         try { outSocket.close(); } catch (e) { /* ignorado */ }
         return new Promise((resolve) => {
             io.close(() => server.close(() => resolve()));
@@ -454,26 +397,18 @@ function createApp(opts = {}) {
     }
 
     return {
-        app,
-        server,
-        io,
-        registry,
-        stats,
-        start,
-        stop,
+        app, server, io, registry, stats, start, stop,
         getConfig: () => config,
         applyConfig,
         dmx,
-        DEFAULT_CONFIG,
-        ports: { httpPort, artnetInPort, sacnInPort },
+        DEFAULT_CONFIG: dmx.DEFAULT_CONFIG,
+        ports: { httpPort, artnetInPort: artnetPort, sacnInPort: sacnPort },
     };
 }
 
 if (require.main === module) {
     const inst = createApp();
-    inst.start().then(() => {
-        console.log('[+] Puertos: Art-Net 6454 · sACN 5568 · HTTP/Panel ' + inst.ports.httpPort);
-    });
+    inst.start().then(() => console.log('[+] Panel: http://localhost:' + inst.ports.httpPort));
 }
 
-module.exports = { createApp, DEFAULT_CONFIG, isIPv4 };
+module.exports = { createApp };

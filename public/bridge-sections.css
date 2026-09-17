@@ -1,7 +1,44 @@
 /* ============================================================
-   Secciones nuevas del panel de bridge (2 entradas + unificación + salida)
+   Menú del bridge v2.1 — módulos A LO ANCHO (entradas lado a lado),
+   chips de universos silenciables y estado del bridge en la raíz.
    ============================================================ */
 
+/* El menú entra completo sin scroll: más ancho y contenido en grillas */
+.modal-content.modal-wide {
+    width: min(1560px, 96vw) !important;
+    max-width: 1560px !important;
+    max-height: 94vh;
+    display: flex;
+    flex-direction: column;
+}
+
+.modal-content.modal-wide .modal-body {
+    overflow-y: auto;
+    padding-right: 4px;
+}
+
+/* Grillas de módulos */
+.grid-2 {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    align-items: start;
+}
+
+.grid-3 {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 14px;
+}
+
+@media (max-width: 1100px) {
+    .grid-2,
+    .grid-3 {
+        grid-template-columns: 1fr;
+    }
+}
+
+/* Sección / tarjeta */
 .cfg-section {
     padding: 14px 16px;
     margin-bottom: 14px;
@@ -25,24 +62,7 @@
     font-weight: 400;
     opacity: 0.55;
     font-size: 11px;
-}
-
-.dot-proto {
-    width: 9px;
-    height: 9px;
-    border-radius: 50%;
-    display: inline-block;
-    flex: 0 0 auto;
-}
-
-.dot-proto.artnet {
-    background: #ffb020;
-    box-shadow: 0 0 8px rgba(255, 176, 32, 0.7);
-}
-
-.dot-proto.sacn {
-    background: #00ff88;
-    box-shadow: 0 0 8px rgba(0, 255, 136, 0.7);
+    letter-spacing: 0;
 }
 
 .cfg-section .two-cols {
@@ -65,7 +85,7 @@
     font-size: 11px;
 }
 
-/* Inputs y selects ocupan todo el ancho de su columna (los numéricos salían angostos) */
+/* Inputs y selects ocupan todo el ancho de su columna */
 .cfg-section input[type="text"],
 .cfg-section input[type="number"],
 .cfg-section select {
@@ -80,6 +100,7 @@
     font-size: 12.5px;
     cursor: pointer;
     opacity: 0.9;
+    margin-top: 6px;
 }
 
 .switch-row input[type="checkbox"] {
@@ -87,13 +108,87 @@
     margin: 0;
 }
 
-.stats-text {
+/* Punto de color según el protocolo de cada entrada */
+.dot-proto {
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    display: inline-block;
+    flex: 0 0 auto;
+    background: #6b7280;
+}
+
+.dot-proto.artnet {
+    background: #ffb020;
+    box-shadow: 0 0 8px rgba(255, 176, 32, 0.7);
+}
+
+.dot-proto.sacn {
+    background: #00ff88;
+    box-shadow: 0 0 8px rgba(0, 255, 136, 0.7);
+}
+
+/* Chips de universos activos: clic para silenciar / reactivar */
+.chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 8px;
+    min-height: 26px;
+}
+
+.chip {
     font-family: 'JetBrains Mono', ui-monospace, Menlo, Consolas, monospace;
     font-size: 11.5px;
-    line-height: 1.8;
+    padding: 4px 9px;
+    border-radius: 999px;
+    border: 1px solid rgba(0, 255, 136, 0.45);
+    background: rgba(0, 255, 136, 0.12);
+    color: #7dffc0;
+    cursor: pointer;
+    user-select: none;
+    transition: all 0.15s;
+}
+
+.chip:hover {
+    background: rgba(0, 255, 136, 0.22);
+}
+
+.chip.muted {
+    border-color: rgba(255, 90, 90, 0.55);
+    background: rgba(255, 90, 90, 0.12);
+    color: #ff9d9d;
+    text-decoration: line-through;
+}
+
+.chip.muted:hover {
+    background: rgba(255, 90, 90, 0.22);
+}
+
+.chips .chip-empty {
+    font-size: 11px;
+    opacity: 0.45;
+    font-family: inherit;
+    border: none;
+    background: none;
+    cursor: default;
+}
+
+/* Estado del bridge en la raíz (sidebar) */
+.system-stats .stats-text {
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+    font-family: 'JetBrains Mono', ui-monospace, Menlo, Consolas, monospace;
+    font-size: 11px;
+    line-height: 1.7;
     opacity: 0.85;
     color: #00ff88;
     word-break: break-word;
+}
+
+.system-stats .stats-text .warn {
+    color: #ffb020;
 }
 
 .source-badge {
@@ -103,7 +198,7 @@
     margin-top: 4px;
 }
 
-/* Inputs numéricos del panel: sin flechas gigantes */
+/* Inputs numéricos sin flechas gigantes */
 .cfg-section input[type="number"] {
     -moz-appearance: textfield;
     appearance: textfield;
@@ -115,7 +210,7 @@
     margin: 0;
 }
 
-/* Tres botones de protocolo entran cómodos */
+/* Toggle de protocolo/entrada: tres botones cómodos */
 .protocol-toggle {
     display: flex;
     gap: 6px;
@@ -129,10 +224,39 @@
     white-space: nowrap;
 }
 
-/* El modal scrollea: el pie con "Save & Apply" queda siempre visible */
+/* Pie del menú siempre visible */
 .modal-content .modal-footer {
     position: sticky;
     bottom: 0;
     background: inherit;
     padding-top: 12px;
+    flex: 0 0 auto;
+}
+
+/* Bloque de estado en la raíz: apilado, sin textos pisados */
+.system-stats {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
+}
+
+.system-stats p {
+    margin: 0;
+    white-space: nowrap;
+}
+
+.system-stats .stats-text {
+    width: 100%;
+    font-size: 10.5px;
+    line-height: 1.65;
+}
+
+.system-stats .stats-text div {
+    white-space: normal;
+}
+
+.source-badge {
+    white-space: normal !important;
+    line-height: 1.35;
 }

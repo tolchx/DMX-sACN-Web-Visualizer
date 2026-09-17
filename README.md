@@ -8,6 +8,10 @@ Visualizador web en tiempo real y **bridge de conversión de protocolos** para D
 Visualiza 96+ universos de Art-Net o sACN en el navegador a 60 FPS (parseo binario + dibujo por GPU)
 y funciona como **puente entre dos entradas y dos formatos de salida**.
 
+> **Novedad v2.1** — Menú rediseñado: **Entrada 1 y Entrada 2 lado a lado** (cada una elige su protocolo),
+> **universos silenciados por entrada** (campo + chips de los universos activos), unificación simplificada y
+> el **estado del bridge + Enable Real-Time Conversion en la raíz** del panel, sin abrir el menú.
+
 > **Novedad v2.0** — Dos entradas simultáneas (Art-Net **y** sACN, cada una en la placa de red que elijas),
 > unificación de ambas (HTP/LTP) y salida elegible en **sACN o Art-Net**, con placa, destino y frecuencia configurables.
 
@@ -15,17 +19,21 @@ y funciona como **puente entre dos entradas y dos formatos de salida**.
 
 ## 🚀 Features
 
-### Entradas (las dos a la vez)
-- **Entrada Art-Net DMX** (UDP `6454`) con **selección de placa de red** — `0.0.0.0` (todas), una IP concreta o `127.0.0.1`.
-- **Entrada sACN E1.31** (UDP `5568`) con **su propia selección de placa** + **unión a los grupos multicast** de un rango de universos configurable (recibe multicast *y* unicast).
-- Las dos entradas pueden escuchar **la misma placa al mismo tiempo**: usan puertos distintos.
-- Cada entrada se puede activar/desactivar por separado.
+### Entradas: DOS módulos genéricos (v2.1)
+- **Entrada 1** y **Entrada 2**, cada una **elige su protocolo**: Art-Net DMX (UDP `6454`) o sACN E1.31 (UDP `5568`).
+  No están atadas a un protocolo fijo: pueden ir invertidas (Entrada 1 = sACN y Entrada 2 = Art-Net).
+- Cada una con **su propia placa de red** — `0.0.0.0` (todas), una IP concreta o `127.0.0.1` (localhost).
+- La entrada en sACN **une los grupos multicast** de un rango de universos configurable (recibe multicast *y* unicast).
+- Las dos pueden escuchar **la misma placa a la vez** (usan puertos distintos).
+- **Universos silenciados POR ENTRADA** (lo que pidió Facundo): campo de texto para escribirlos **y chips** con los
+  universos activos — un clic silencia o reactiva. Al silenciar en la entrada, esos universos no entran al sistema
+  y la unificación queda limpia (sin datos pisándose).
 
 ### Unificación
-- **Qué fuentes se mezclan**: las dos, sólo Art-Net o sólo sACN.
-- **Modo de mezcla**:
-  - **HTP** (por defecto) — canal por canal gana el valor más alto.
-  - **LTP** — gana el universo completo de la fuente que llegó último.
+- **Qué fuente se unifica**: Fuente 1 + Fuente 2, sólo Fuente 1 o sólo Fuente 2.
+- Mezcla interna **HTP** (canal por canal gana el valor más alto): sólo actúa si las dos entradas
+  traen el mismo universo. Silenciando los universos correctos en cada entrada, cada uno queda
+  alimentado por una sola fuente y no hay nada que mezclar.
 - El visor muestra qué fuentes alimentan cada universo y quién está ganando.
 
 ### Salida
@@ -77,16 +85,16 @@ Doble clic en `start_server.bat` → abre `http://localhost:3000/`.
 1. Mandá Art-Net o sACN desde TouchDesigner, Resolume, QLC+, GrandMA, etc.
 2. Los universos aparecen solos en la columna izquierda (`U1`, `U42`…). Clic en el pill para ver la grilla completa.
 3. Botones **Intensity / Values / Pause** arriba; minimap a la derecha.
-4. El toggle **sACN / Art-Net / Unified** cambia la fuente que estás mirando.
+4. El toggle **Entrada 1 / Entrada 2 / Unified** cambia la fuente que estás mirando.
 
 ### 3. Configurar el bridge
 Clic en el engranaje ⚙️ (o entrá directo a `http://localhost:3000/#bridge`):
 
-1. **Entrada 1 · Art-Net DMX** — elegí la placa que escucha (o `0.0.0.0`) y dejala activa.
-2. **Entrada 2 · sACN (E1.31)** — elegí su placa (puede ser la misma) y el rango de universos multicast.
-3. **Unificación** — qué fuentes se mezclan y con qué criterio (HTP/LTP).
+1. **Entrada 1** — elegí el **protocolo** (Art-Net o sACN), la placa que escucha y sus universos silenciados.
+2. **Entrada 2** — igual: protocolo, placa (puede ser la misma) y, si es sACN, el rango multicast.
+3. **Unificación** — qué fuente se unifica (Fuente 1, Fuente 2 o ambas).
 4. **Salida** — formato (sACN o Art-Net), placa de salida, destino (Multicast/Unicast/Broadcast), puerto y frecuencia.
-5. Encendé **Enable Real-Time Conversion** y `Save & Apply`. El badge pasa a **BRIDGE ON**.
+5. `Save & Apply` en el menú, y encendé **Enable Real-Time Conversion** desde la barra lateral (**BRIDGE ON**).
 
 ### 4. Probar sin consola de luces
 ```bash

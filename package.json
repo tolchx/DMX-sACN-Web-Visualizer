@@ -1,6 +1,6 @@
 {
   "name": "dmx-sacn-web-visualizer",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
@@ -9,7 +9,7 @@
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "description": "",
+  "description": "Visualizador DMX/sACN y bridge de protocolos: dos entradas genéricas (cada una elige Art-Net o sACN, su placa y sus universos silenciados), unificación y salida en cualquiera de los dos formatos.",
   "dependencies": {
     "express": "^5.2.1",
     "socket.io": "^4.8.3"

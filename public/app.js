@@ -1,6 +1,6 @@
 const socket = io();
 
-// DOM Elements
+// ---------------------------------------------------------------- DOM Elements
 const connectionDot = document.getElementById('connection-dot');
 const connectionText = document.getElementById('connection-text');
 const universeSelector = document.getElementById('universe-selector');
@@ -10,33 +10,45 @@ const currentUniverseDisplay = document.getElementById('current-universe-display
 const gridsContainer = document.getElementById('grids-container');
 const fpsCounter = document.getElementById('fps-counter');
 const minimapContainer = document.getElementById('minimap-container');
-const btnSacn = document.getElementById('btn-sacn');
-const btnArtnet = document.getElementById('btn-artnet');
+const btnIn1 = document.getElementById('btn-in1');
+const btnIn2 = document.getElementById('btn-in2');
+const btnUnified = document.getElementById('btn-unified');
+const currentProtocolDisplay = document.getElementById('current-protocol-display');
 
-// Bridge Modal DOM Elements
+// Menú del bridge
 const btnBridgeSettings = document.getElementById('btn-bridge-settings');
 const bridgeModal = document.getElementById('bridge-modal');
 const btnCloseModal = document.getElementById('close-modal');
 const btnSaveBridge = document.getElementById('btn-save-bridge');
-const toggleEnableBridge = document.getElementById('bridge-enable-toggle');
 const statusBadge = document.getElementById('bridge-status-indicator');
+const toggleEnableRoot = document.getElementById('bridge-enable-root');
+const statsText = document.getElementById('bridge-stats-text');
+const sourceBadge = document.getElementById('source-badge');
 const selectPreset = document.getElementById('preset-selector');
 const inputPresetName = document.getElementById('preset-name');
 const btnSavePreset = document.getElementById('btn-save-preset');
 const btnLoadPreset = document.getElementById('btn-load-preset');
 
-// Entrada Art-Net
-const selArtnetInIface = document.getElementById('artnet-in-interface');
-const chkArtnetInEnabled = document.getElementById('artnet-in-enabled');
-// Entrada sACN
-const selSacnInIface = document.getElementById('sacn-in-interface');
-const chkSacnInEnabled = document.getElementById('sacn-in-enabled');
-const inSacnMcFrom = document.getElementById('sacn-mc-from');
-const inSacnMcTo = document.getElementById('sacn-mc-to');
-// Unificación
+// Entradas genéricas (1 y 2): mismo set de controles
+const INPUTS = [0, 1].map((i) => {
+    const n = i + 1;
+    return {
+        index: i,
+        protocol: document.getElementById(`in${n}-protocol`),
+        iface: document.getElementById(`in${n}-interface`),
+        enabled: document.getElementById(`in${n}-enabled`),
+        mcFrom: document.getElementById(`in${n}-mc-from`),
+        mcTo: document.getElementById(`in${n}-mc-to`),
+        mcWrap: document.getElementById(`in${n}-mc-wrap`),
+        muted: document.getElementById(`in${n}-muted`),
+        chips: document.getElementById(`in${n}-chips`),
+        dot: document.getElementById(`dot-in${n}`),
+        summary: document.getElementById(`in${n}-summary`),
+    };
+});
+
+// Unificación y salida
 const selMergeSources = document.getElementById('merge-sources');
-const selMergePolicy = document.getElementById('merge-policy');
-// Salida
 const selOutProtocol = document.getElementById('out-protocol');
 const selOutInterface = document.getElementById('bridge-out-interface');
 const selOutTargetMode = document.getElementById('out-target-mode');
@@ -44,37 +56,34 @@ const inputTargetIp = document.getElementById('bridge-target-ip');
 const inOutPort = document.getElementById('out-port');
 const inOutRate = document.getElementById('out-rate');
 const selectUniverseOffset = document.getElementById('bridge-universe-offset');
-const inputMutedUniverses = document.getElementById('bridge-muted-universes');
-// Estado
-const statsText = document.getElementById('bridge-stats-text');
-const sourceBadge = document.getElementById('source-badge');
-const btnUnified = document.getElementById('btn-unified');
-const currentProtocolDisplay = document.getElementById('current-protocol-display');
 
-// View Controls
+// View controls
 const btnIntensity = document.getElementById('btn-intensity');
 const btnValues = document.getElementById('btn-values');
 const btnPause = document.getElementById('btn-pause');
 
-// State
-let currentProtocol = 'sACN'; // 'sACN', 'ArtNet' o 'Unified'
-let unifiedInfo = {}; // universo -> { winner, present }
-let currentUniverse = null; // can be number or 'all'
-let activeUniverses = { sACN: [], ArtNet: [] };
+// ---------------------------------------------------------------------- Estado
+let currentProtocol = 'input1'; // 'input1' | 'input2' | 'Unified'
+let currentUniverse = null;
+let activeUniverses = { input1: [], input2: [], Unified: [] };
+let unifiedInfo = {};
+let bridgeConfig = null;
 let frames = 0;
 let lastFpsTime = performance.now();
 let isPaused = false;
-let viewMode = 'intensity'; // 'intensity' or 'values'
+let viewMode = 'intensity';
 let universeOffset = 0;
 
-// High Performance Data Model
-const universeData = new Map(); // "sACN-1" -> Uint8Array(512)
-const universeDirty = new Set(); // "sACN-1" ids that need re-rendering
+const PROTOCOL_LABEL = { input1: 'Entrada 1', input2: 'Entrada 2', Unified: 'Unified' };
+const PROTOCOL_SHORT = { artnet: 'Art-Net', sacn: 'sACN' };
 
-// DOM Cache
-const gridsCache = new Map(); // "sACN-1" -> channels[] HTML Elements
-const minimapCache = new Map(); // "sACN-1" -> { wrapper, ctx } (Canvas Context)
+// Modelo de datos de alta performance
+const universeData = new Map(); // "input1-1" -> Uint8Array(512)
+const universeDirty = new Set();
+const gridsCache = new Map();
+const minimapCache = new Map();
 
+// ------------------------------------------------------------------ Grilla DMX
 function createGrid(universe) {
     const wrapper = document.createElement('div');
     wrapper.className = 'universe-grid-wrapper';
@@ -88,7 +97,6 @@ function createGrid(universe) {
     grid.className = 'dmx-grid';
 
     const channels = [];
-    // Populate quickly
     let html = '';
     for (let i = 1; i <= 512; i++) {
         html += `<div class="dmx-channel">${i}</div>`;
@@ -98,7 +106,7 @@ function createGrid(universe) {
     const children = grid.children;
     for (let i = 0; i < 512; i++) {
         const el = children[i];
-        el.__val = 0; // fast expando property for diffing
+        el.__val = 0;
         channels.push(el);
     }
 
@@ -119,20 +127,19 @@ function renderGrids() {
             gridsContainer.appendChild(gridObj.wrapper);
             const key = `${currentProtocol}-${uni}`;
             gridsCache.set(key, gridObj.channels);
-            universeDirty.add(key); // Force immediate paint
+            universeDirty.add(key);
         });
     } else if (currentUniverse !== null) {
         currentUniverseDisplay.textContent = currentUniverse;
         const gridObj = createGrid(currentUniverse);
-        gridObj.title.style.display = 'none'; // Hide inner title since header has it
+        gridObj.title.style.display = 'none';
         gridsContainer.appendChild(gridObj.wrapper);
         const key = `${currentProtocol}-${currentUniverse}`;
         gridsCache.set(key, gridObj.channels);
-        universeDirty.add(key); // Force immediate paint
+        universeDirty.add(key);
     }
 }
 
-// Interactivity: Setup Select Dropdown & Click events
 universeSelector.addEventListener('change', (e) => {
     const val = e.target.value;
     switchUniverse(val === 'all' ? 'all' : parseInt(val));
@@ -142,19 +149,15 @@ function switchProtocol(proto) {
     if (currentProtocol === proto) return;
     currentProtocol = proto;
 
-    // update buttons style
-    [['sACN', btnSacn], ['ArtNet', btnArtnet], ['Unified', btnUnified]].forEach(([name, btn]) => {
+    [['input1', btnIn1], ['input2', btnIn2], ['Unified', btnUnified]].forEach(([name, btn]) => {
         if (!btn) return;
         if (name === proto) btn.classList.add('active');
         else btn.classList.remove('active');
     });
-    if (currentProtocolDisplay) currentProtocolDisplay.textContent = proto;
+    if (currentProtocolDisplay) currentProtocolDisplay.textContent = PROTOCOL_LABEL[proto] || proto;
     updateSourceBadge();
 
-    // Fallback safe state
     currentUniverse = null;
-
-    // Re-join server side routing
     socket.emit('join-universe', { protocol: currentProtocol, universeId: 'all' });
 
     const activeForProto = activeUniverses[currentProtocol] || [];
@@ -168,22 +171,20 @@ function switchProtocol(proto) {
     }
 }
 
-btnSacn.addEventListener('click', () => switchProtocol('sACN'));
-btnArtnet.addEventListener('click', () => switchProtocol('ArtNet'));
+if (btnIn1) btnIn1.addEventListener('click', () => switchProtocol('input1'));
+if (btnIn2) btnIn2.addEventListener('click', () => switchProtocol('input2'));
 if (btnUnified) btnUnified.addEventListener('click', () => switchProtocol('Unified'));
 
 function switchUniverse(universeId) {
     currentUniverse = universeId;
     universeSelector.value = universeId;
 
-    // Notify server to join room for specific active data routing
     socket.emit('join-universe', { protocol: currentProtocol, universeId: universeId });
 
-    // Rebuild UI
     renderGrids();
     renderActiveUniverses();
+    updateSourceBadge();
 
-    // Update highlighted minimap items
     minimapCache.forEach((obj, key) => {
         const parts = key.split('-');
         const proto = parts[0];
@@ -197,7 +198,7 @@ function switchUniverse(universeId) {
     });
 }
 
-// View Mode Logic
+// ------------------------------------------------------------- Modos de vista
 btnIntensity.addEventListener('click', () => {
     viewMode = 'intensity';
     btnIntensity.classList.add('active');
@@ -227,14 +228,12 @@ function forceRepaintAll() {
     universeData.forEach((_, key) => universeDirty.add(key));
 }
 
-// Helper to calculate color based on intensity (Green scale)
 function getIntensityColor(value) {
     if (value === 0) return 'var(--dmx-inactive)';
     const MathAlpha = (value / 255.0) * 0.9 + 0.1;
     return `rgba(0, 255, 136, ${MathAlpha})`;
 }
 
-// Draw a single 32x16 minimap super fast directly onto an ImageData buffer
 function drawMiniCanvas(ctx, dataArr) {
     const imgData = ctx.createImageData(32, 16);
     const buf = new Uint32Array(imgData.data.buffer);
@@ -242,33 +241,31 @@ function drawMiniCanvas(ctx, dataArr) {
     for (let i = 0; i < 512; i++) {
         const val = dataArr[i];
         if (val === 0) {
-            buf[i] = 0xff111111; // Dark #111 -> ABGR order
+            buf[i] = 0xff111111;
         } else {
             const opacity = (val / 255.0) * 0.9 + 0.1;
             const r = 0;
             const g = Math.floor(255 * opacity);
             const b = Math.floor(136 * opacity);
-            buf[i] = (255 << 24) | (b << 16) | (g << 8) | r; // ABGR encoding
+            buf[i] = (255 << 24) | (b << 16) | (g << 8) | r;
         }
     }
     ctx.putImageData(imgData, 0, 0);
 }
 
-// ---- GAME LOOP FOR RENDERING ----
+// ------------------------------------------------------------------ Game loop
 function renderLoop() {
     if (!isPaused) {
         universeDirty.forEach(key => {
             const dataMap = universeData.get(key);
             if (!dataMap) return;
 
-            // 1. Update Main Grid (only DOM elements that actually changed)
             const mainChannels = gridsCache.get(key);
             if (mainChannels) {
                 for (let i = 0; i < 512; i++) {
                     const val = dataMap[i];
                     const el = mainChannels[i];
 
-                    // Always update text if in values mode
                     if (viewMode === 'values') {
                         if (el.__textVal !== val) {
                             el.textContent = val > 0 ? val : i + 1;
@@ -281,7 +278,6 @@ function renderLoop() {
                         }
                     }
 
-                    // Only touch DOM styles if changed!
                     if (el.__val !== val) {
                         el.__val = val;
                         el.style.backgroundColor = getIntensityColor(val);
@@ -299,17 +295,15 @@ function renderLoop() {
                 }
             }
 
-            // 2. Update Minimap Grid (Via high perf Canvas pixel buffer)
             const mini = minimapCache.get(key);
             if (mini) {
                 drawMiniCanvas(mini.ctx, dataMap);
             }
         });
 
-        universeDirty.clear(); // Clear jobs for this frame
+        universeDirty.clear();
     }
 
-    // update FPS
     frames++;
     const now = performance.now();
     if (now - lastFpsTime >= 1000) {
@@ -321,18 +315,14 @@ function renderLoop() {
     requestAnimationFrame(renderLoop);
 }
 
-// Start The Game Loop
 requestAnimationFrame(renderLoop);
 
-
-// WebSockets Events
+// ------------------------------------------------------------- WebSockets
 socket.on('connect', () => {
     connectionDot.classList.remove('disconnected');
     connectionDot.classList.add('connected');
     connectionText.textContent = 'Connected';
     socket.emit('join-universe', { protocol: currentProtocol, universeId: 'all' });
-
-    // Request IPs and presets
     socket.emit('get-network-interfaces');
     socket.emit('get-presets');
 });
@@ -344,22 +334,20 @@ socket.on('disconnect', () => {
 });
 
 socket.on('active-universes', (payloadObj) => {
-    // Both protocols return in payload
-    if (JSON.stringify(payloadObj) !== JSON.stringify(activeUniverses)) {
-        activeUniverses = payloadObj;
+    activeUniverses = { input1: payloadObj.input1 || [], input2: payloadObj.input2 || [], Unified: payloadObj.Unified || [] };
 
-        updateSelector();
-        renderActiveUniverses();
-        renderMinimap();
+    updateSelector();
+    renderActiveUniverses();
+    renderMinimap();
+    renderChips();
 
-        const activeList = activeUniverses[currentProtocol] || [];
-        activeCount.textContent = activeList.length;
+    const activeList = activeUniverses[currentProtocol] || [];
+    activeCount.textContent = activeList.length;
 
-        if (currentUniverse === null && activeList.length > 0) {
-            switchUniverse(activeList[0]);
-        } else if (currentUniverse === 'all') {
-            renderGrids(); // active list changed, rebuild DOM grids
-        }
+    if (currentUniverse === null && activeList.length > 0) {
+        switchUniverse(activeList[0]);
+    } else if (currentUniverse === 'all') {
+        renderGrids();
     }
 });
 
@@ -411,7 +399,6 @@ function renderActiveUniverses() {
 
 function renderMinimap() {
     minimapContainer.innerHTML = '';
-    // Optional: Only clear for current protocol to save memory, or clear all
     minimapCache.clear();
 
     const activeList = activeUniverses[currentProtocol] || [];
@@ -439,16 +426,14 @@ function renderMinimap() {
         const key = `${currentProtocol}-${uni}`;
         minimapCache.set(key, { wrapper, ctx });
 
-        // Force an initial draw in the background
         universeDirty.add(key);
     });
 }
 
-// Receive actual array and queue for rendering
 socket.on('dmx-data', (payload) => {
-    // Expected format: { protocol: 'sACN' | 'ArtNet', universe: 1, data: [...] }
-    const protocolIn = payload.protocol || 'sACN'; // Fallback for safety
-    if (protocolIn !== currentProtocol) return; // Only process what we are watching
+    const protocolIn = payload.protocol || 'Entrada1';
+    const mapped = protocolIn === 'Unified' ? 'Unified' : (payload.input === 1 ? 'input2' : 'input1');
+    if (mapped !== currentProtocol) return;
 
     const uni = payload.universe;
     const key = `${currentProtocol}-${uni}`;
@@ -459,7 +444,6 @@ socket.on('dmx-data', (payload) => {
         universeData.set(key, dataMap);
     }
 
-    // Check if we need to update anything (Diffing!)
     const incoming = payload.data;
     let isDirty = false;
     for (let i = 0; i < 512; i++) {
@@ -469,7 +453,6 @@ socket.on('dmx-data', (payload) => {
         }
     }
 
-    // Only flag for render if a value ACTUALLY changed this frame
     if (isDirty) {
         universeDirty.add(key);
     }
@@ -480,31 +463,49 @@ function updateSourceBadge() {
     if (!sourceBadge) return;
     if (currentUniverse === null || currentUniverse === 'all') {
         sourceBadge.textContent = currentProtocol === 'Unified'
-            ? 'Unified = Art-Net + sACN mezclados'
-            : `Viendo ${currentProtocol}`;
+            ? 'Unified = Fuente 1 + Fuente 2'
+            : `Viendo ${PROTOCOL_LABEL[currentProtocol]}`;
         return;
     }
     const info = unifiedInfo[currentUniverse];
     if (!info) {
-        sourceBadge.textContent = `${currentProtocol} · universo ${currentUniverse}`;
+        sourceBadge.textContent = `${PROTOCOL_LABEL[currentProtocol]} · universo ${currentUniverse}`;
         return;
     }
-    const flags = [];
-    if (info.present.includes('artnet')) flags.push('Art-Net');
-    if (info.present.includes('sacn')) flags.push('sACN');
-    sourceBadge.textContent = `Universo ${currentUniverse} · fuentes: ${flags.join(' + ') || '—'} · gana: ${info.winner || '—'}`;
+    const flags = info.present.map((p) => (p === 'input1' ? 'Fuente 1' : 'Fuente 2'));
+    sourceBadge.textContent = `U${currentUniverse} · fuentes: ${flags.join(' + ') || '—'} · gana: ${info.winner === 'mix' ? 'mezcla (HTP)' : (PROTOCOL_LABEL[info.winner] || '—')}`;
 }
 
-// --- BRIDGE MODAL LOGIC ---
-
-// Toggle Modal
-btnBridgeSettings.addEventListener('click', () => {
-    bridgeModal.classList.remove('hidden');
+// Detalle de fuentes por universo
+socket.on('unified-info', (info) => {
+    unifiedInfo = info || {};
+    updateSourceBadge();
 });
 
-btnCloseModal.addEventListener('click', () => {
-    bridgeModal.classList.add('hidden');
+// Estado del bridge (en la raíz)
+socket.on('bridge-stats', (st) => {
+    if (!statsText || !st) return;
+    const rec = st.received || [{}, {}];
+    const bound = st.boundTo || [null, null];
+    const proto = bridgeConfig ? bridgeConfig.inputs.map((e) => PROTOCOL_SHORT[e.protocol] || e.protocol) : ['—', '—'];
+    const multid = [st.multicastGroups ? st.multicastGroups[0] : 0, st.multicastGroups ? st.multicastGroups[1] : 0];
+    const muted = [st.droppedMuted ? st.droppedMuted[0] : 0, st.droppedMuted ? st.droppedMuted[1] : 0];
+
+    const lineas = [
+        `E1 · ${proto[0]}: ${(rec[0] || {}).paquetes || 0} pqt (${bound[0] || '—'}${multid[0] ? `, ${multid[0]} mc` : ''})`,
+        `E2 · ${proto[1]}: ${(rec[1] || {}).paquetes || 0} pqt (${bound[1] || '—'}${multid[1] ? `, ${multid[1]} mc` : ''})`,
+        `OUT · ${(st.sent || {}).artnet || 0} Art-Net · ${(st.sent || {}).sacn || 0} sACN`,
+    ];
+    if (muted[0] || muted[1]) {
+        lineas.push(`<span class="warn">silenciados descartados: E1 ${muted[0]} · E2 ${muted[1]}</span>`);
+    }
+    if (st.lastSendError) lineas.push(`<span class="warn">⚠ ${st.lastSendError}</span>`);
+    statsText.innerHTML = lineas.map((l) => `<div>${l}</div>`).join('');
 });
+
+// ------------------------------------------- Menú: entradas / unificación / salida
+btnBridgeSettings.addEventListener('click', () => bridgeModal.classList.remove('hidden'));
+btnCloseModal.addEventListener('click', () => bridgeModal.classList.add('hidden'));
 
 function fillInterfaceSelect(select, { includeAll, includeDefault }) {
     if (!select) return;
@@ -524,137 +525,155 @@ function fillInterfaceSelect(select, { includeAll, includeDefault }) {
 }
 
 socket.on('network-interfaces', (interfaces) => {
-    const outValue = selOutInterface ? selOutInterface.value : '';
-    fillInterfaceSelect(selArtnetInIface, { includeAll: true });
-    fillInterfaceSelect(selSacnInIface, { includeAll: true });
+    fillInterfaceSelect(INPUTS[0].iface, { includeAll: true });
+    fillInterfaceSelect(INPUTS[1].iface, { includeAll: true });
     fillInterfaceSelect(selOutInterface, { includeDefault: true });
 
     interfaces.forEach(net => {
         const label = `${net.name} - ${net.address}`;
-        [
-            [selArtnetInIface, net.address],
-            [selSacnInIface, net.address],
-            [selOutInterface, net.address],
-        ].forEach(([select, value]) => {
+        [INPUTS[0].iface, INPUTS[1].iface, selOutInterface].forEach((select) => {
             if (!select) return;
             const opt = document.createElement('option');
-            opt.value = value;
-            opt.textContent = value === '127.0.0.1' ? `Localhost - ${value}` : label;
+            opt.value = net.address;
+            opt.textContent = net.address === '127.0.0.1' ? `Localhost - ${net.address}` : label;
             select.appendChild(opt);
         });
     });
 
-    if (selOutInterface && outValue) selOutInterface.value = outValue;
+    if (bridgeConfig) applyConfigToMenu(bridgeConfig);
 });
 
-// Recibe la configuración activa del servidor y refleja el estado en el panel
-socket.on('bridge-config', (config) => {
-    const artnetIn = config.artnetIn || { enabled: true, interface: config.inInterface || '0.0.0.0' };
-    const sacnIn = config.sacnIn || { enabled: true, interface: config.inInterface || '0.0.0.0', multicastFrom: 1, multicastTo: 100 };
-    const merge = config.merge || { policy: 'htp', sources: 'both' };
-    const out = config.out || {
-        protocol: 'sacn',
-        interface: config.outInterface || '',
-        targetMode: (String(config.targetIp || '').toLowerCase() === 'multicast') ? 'multicast' : 'unicast',
-        targetIp: config.targetIp || '127.0.0.1',
-        port: null,
-        rate: 30,
-    };
+// Cada entrada muestra u oculta sus opciones según el protocolo elegido
+function updateInputVisibility(input) {
+    const esSacn = input.protocol.value === 'sacn';
+    if (input.mcWrap) input.mcWrap.style.display = esSacn ? 'grid' : 'none';
+    if (input.dot) input.dot.className = `dot-proto ${input.protocol.value}`;
+}
 
-    if (selArtnetInIface) selArtnetInIface.value = artnetIn.interface || '0.0.0.0';
-    if (chkArtnetInEnabled) chkArtnetInEnabled.checked = artnetIn.enabled !== false;
-    if (selSacnInIface) selSacnInIface.value = sacnIn.interface || '0.0.0.0';
-    if (chkSacnInEnabled) chkSacnInEnabled.checked = sacnIn.enabled !== false;
-    if (inSacnMcFrom) inSacnMcFrom.value = sacnIn.multicastFrom ?? 1;
-    if (inSacnMcTo) inSacnMcTo.value = sacnIn.multicastTo ?? 100;
+INPUTS.forEach((input) => {
+    input.protocol.addEventListener('change', () => updateInputVisibility(input));
+});
 
-    if (selMergeSources) selMergeSources.value = merge.sources || 'both';
-    if (selMergePolicy) selMergePolicy.value = merge.policy || 'htp';
+function applyConfigToMenu(config) {
+    bridgeConfig = config;
+    const ins = config.inputs || [];
 
+    INPUTS.forEach((input, i) => {
+        const cfgIn = ins[i] || {};
+        input.protocol.value = cfgIn.protocol || 'artnet';
+        input.iface.value = cfgIn.interface || '0.0.0.0';
+        input.enabled.checked = cfgIn.enabled !== false;
+        input.mcFrom.value = cfgIn.multicastFrom !== undefined ? cfgIn.multicastFrom : 1;
+        input.mcTo.value = cfgIn.multicastTo !== undefined ? cfgIn.multicastTo : 100;
+        input.muted.value = (cfgIn.muted || []).join(', ');
+        if (input.summary) input.summary.textContent = PROTOCOL_SHORT[cfgIn.protocol] || '';
+        updateInputVisibility(input);
+    });
+
+    if (selMergeSources) selMergeSources.value = (config.merge && config.merge.sources) || 'both';
+
+    const out = config.out || {};
     if (selOutProtocol) selOutProtocol.value = out.protocol || 'sacn';
     if (selOutInterface) selOutInterface.value = out.interface || '';
     if (selOutTargetMode) selOutTargetMode.value = out.targetMode || 'unicast';
-    if (inOutPort) inOutPort.value = out.port || '';
-    if (inOutRate) inOutRate.value = out.rate || 30;
     if (inputTargetIp) {
         inputTargetIp.value = out.targetIp || '127.0.0.1';
-        inputTargetIp.style.display = (out.targetMode === 'unicast') ? 'block' : 'none';
+        inputTargetIp.disabled = out.targetMode !== 'unicast';
     }
-
-    if (toggleEnableBridge) toggleEnableBridge.checked = !!config.enabled;
+    if (inOutPort) inOutPort.value = out.port || '';
+    if (inOutRate) inOutRate.value = out.rate || 30;
     if (selectUniverseOffset) selectUniverseOffset.value = config.universeOffset || 0;
-    if (inputMutedUniverses) inputMutedUniverses.value = (config.mutedUniverses || []).join(', ');
+
+    if (toggleEnableRoot) toggleEnableRoot.checked = !!config.enabled;
 
     universeOffset = parseInt(config.universeOffset || 0);
 
     updateSelector();
     renderActiveUniverses();
     renderMinimap();
+    renderChips();
 
     if (config.enabled) {
         statusBadge.textContent = 'BRIDGE ON';
         statusBadge.classList.replace('off', 'on');
+        if (btnIn1) btnIn1.classList.add('bridge-on');
     } else {
         statusBadge.textContent = 'BRIDGE OFF';
         statusBadge.classList.replace('on', 'off');
     }
-});
+}
 
-// Detalle de fuentes por universo (qué entrada está presente y quién gana)
-socket.on('unified-info', (info) => {
-    unifiedInfo = info || {};
-    updateSourceBadge();
-});
+socket.on('bridge-config', (config) => applyConfigToMenu(config));
 
-// Estado del tráfico del bridge
-socket.on('bridge-stats', (st) => {
-    if (!statsText || !st) return;
-    const rec = st.received || {};
-    const sent = st.sent || {};
-    const bound = st.boundTo || {};
-    const lines = [
-        `IN  · Art-Net: ${rec.artnet || 0} paquetes  (escuchando ${bound.artnet || '—'})`,
-        `IN  · sACN: ${rec.sacn || 0} paquetes  (escuchando ${bound.sacn || '—'}${st.multicastGroups ? `, ${st.multicastGroups} grupos multicast` : ''})`,
-        `OUT · Art-Net: ${sent.artnet || 0}  ·  sACN: ${sent.sacn || 0}`,
-    ];
-    if (st.lastSendError) lines.push(`⚠ Último error de envío: ${st.lastSendError}`);
-    statsText.innerHTML = lines.map((l) => `<div>${l}</div>`).join('');
-});
-
-// Muestra/oculta el campo de IP según el modo de destino
-if (selOutTargetMode) {
-    selOutTargetMode.addEventListener('change', () => {
-        if (inputTargetIp) inputTargetIp.style.display = (selOutTargetMode.value === 'unicast') ? 'block' : 'none';
+// Enable real-time conversion directo desde la raíz
+if (toggleEnableRoot) {
+    toggleEnableRoot.addEventListener('change', () => {
+        socket.emit('update-bridge-config', { enabled: toggleEnableRoot.checked });
     });
 }
 
-// Arma el objeto de configuración desde el panel
+if (selOutTargetMode) {
+    selOutTargetMode.addEventListener('change', () => {
+        if (inputTargetIp) inputTargetIp.disabled = selOutTargetMode.value !== 'unicast';
+    });
+}
+
+// Chips: universos activos de cada entrada, clic para silenciar / reactivar
+function renderChips() {
+    INPUTS.forEach((input, i) => {
+        if (!input.chips) return;
+        const activos = activeUniverses[i === 0 ? 'input1' : 'input2'] || [];
+        const silenciados = input.muted.value.split(',').map(v => parseInt(v.trim())).filter(v => !isNaN(v));
+        const todos = Array.from(new Set([...activos, ...silenciados])).sort((a, b) => a - b);
+
+        input.chips.innerHTML = '';
+        if (todos.length === 0) {
+            const vacio = document.createElement('span');
+            vacio.className = 'chip-empty';
+            vacio.textContent = 'Sin universos activos todavía';
+            input.chips.appendChild(vacio);
+            return;
+        }
+        todos.forEach((uni) => {
+            const chip = document.createElement('span');
+            const estaSilenciado = silenciados.includes(uni);
+            chip.className = `chip${estaSilenciado ? ' muted' : ''}`;
+            chip.textContent = `U${uni + universeOffset}`;
+            chip.title = estaSilenciado ? 'Silenciado — clic para reactivar' : 'Activo — clic para silenciar';
+            chip.addEventListener('click', () => {
+                socket.emit('toggle-universe-mute', { input: i, universe: uni });
+            });
+            input.chips.appendChild(chip);
+        });
+    });
+}
+
+// El texto de silenciados también se puede editar a mano
+INPUTS.forEach((input, i) => {
+    input.muted.addEventListener('change', () => {
+        const arr = input.muted.value.split(',').map(v => parseInt(v.trim())).filter(v => !isNaN(v));
+        socket.emit('update-bridge-config', { inputs: readInputs().map((e, idx) => (idx === i ? Object.assign({}, e, { muted: arr }) : e)) });
+    });
+});
+
+function readInputs() {
+    return INPUTS.map((input) => ({
+        protocol: input.protocol.value,
+        enabled: input.enabled.checked,
+        interface: input.iface.value,
+        muted: input.muted.value.split(',').map(v => parseInt(v.trim())).filter(v => !isNaN(v)),
+        multicastFrom: parseInt(input.mcFrom.value) || 0,
+        multicastTo: parseInt(input.mcTo.value) || 0,
+        joinMulticast: true,
+    }));
+}
+
+// Arma la configuración completa desde el menú
 function readBridgeConfig() {
-    const mutedArr = inputMutedUniverses.value.split(',')
-        .map(v => v.trim())
-        .filter(v => v !== '')
-        .map(v => parseInt(v))
-        .filter(v => !isNaN(v));
-
     const portRaw = inOutPort ? inOutPort.value.trim() : '';
-
     return {
-        enabled: toggleEnableBridge.checked,
-        artnetIn: {
-            enabled: chkArtnetInEnabled ? chkArtnetInEnabled.checked : true,
-            interface: selArtnetInIface ? selArtnetInIface.value : '0.0.0.0',
-        },
-        sacnIn: {
-            enabled: chkSacnInEnabled ? chkSacnInEnabled.checked : true,
-            interface: selSacnInIface ? selSacnInIface.value : '0.0.0.0',
-            multicastFrom: parseInt(inSacnMcFrom ? inSacnMcFrom.value : 1) || 0,
-            multicastTo: parseInt(inSacnMcTo ? inSacnMcTo.value : 100) || 0,
-            joinMulticast: true,
-        },
-        merge: {
-            policy: selMergePolicy ? selMergePolicy.value : 'htp',
-            sources: selMergeSources ? selMergeSources.value : 'both',
-        },
+        inputs: readInputs(),
+        merge: { sources: selMergeSources ? selMergeSources.value : 'both' },
         out: {
             protocol: selOutProtocol ? selOutProtocol.value : 'sacn',
             interface: selOutInterface ? selOutInterface.value : '',
@@ -664,7 +683,7 @@ function readBridgeConfig() {
             rate: parseInt(inOutRate ? inOutRate.value : 30) || 30,
         },
         universeOffset: parseInt(selectUniverseOffset.value) || 0,
-        mutedUniverses: mutedArr,
+        enabled: toggleEnableRoot ? toggleEnableRoot.checked : false,
     };
 }
 
@@ -673,12 +692,12 @@ btnSaveBridge.addEventListener('click', () => {
     bridgeModal.classList.add('hidden');
 });
 
-// Deep-link: http://localhost:3000/#bridge abre el panel directamente
+// Deep-link: http://localhost:3000/#bridge abre el menú directamente
 if (location.hash === '#bridge') {
     bridgeModal.classList.remove('hidden');
 }
 
-// --- PRESETS LOGIC ---
+// ------------------------------------------------------------------- Presets
 socket.on('presets-list', (presets) => {
     selectPreset.innerHTML = '<option value="" disabled selected>Select a preset...</option>';
     presets.forEach(p => {
@@ -698,7 +717,5 @@ btnSavePreset.addEventListener('click', () => {
 
 btnLoadPreset.addEventListener('click', () => {
     const name = selectPreset.value;
-    if (name) {
-        socket.emit('load-preset', name);
-    }
+    if (name) socket.emit('load-preset', name);
 });

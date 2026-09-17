@@ -1,7 +1,8 @@
 'use strict';
 /**
- * Test de integración del BRIDGE completo:
- *   Art-Net + sACN entran a la vez -> se unifican (HTP/LTP) -> salen como sACN o Art-Net.
+ * Test de integración del BRIDGE v2.1:
+ *   dos entradas genéricas (cada una elige protocolo y placa) → unificación → salida.
+ *   Incluye el silenciado POR ENTRADA (pedido de Facundo).
  *
  * Ejecutar: node --test
  */
@@ -31,13 +32,13 @@ function slots(set = {}) {
 function udpSender() {
     const sock = dgram.createSocket('udp4');
     return {
-        artnet(universe, data) {
+        artnet(universe, data, port = ARTNET_IN) {
             const pkt = dmx.buildArtNetDmx(universe, data, 0);
-            return new Promise((res) => sock.send(pkt, 0, pkt.length, ARTNET_IN, '127.0.0.1', res));
+            return new Promise((res) => sock.send(pkt, 0, pkt.length, port, '127.0.0.1', res));
         },
-        sacn(universe, data) {
+        sacn(universe, data, port = SACN_IN) {
             const pkt = dmx.buildSacn(universe, data, { cid: Buffer.alloc(16, 1) });
-            return new Promise((res) => sock.send(pkt, 0, pkt.length, SACN_IN, '127.0.0.1', res));
+            return new Promise((res) => sock.send(pkt, 0, pkt.length, port, '127.0.0.1', res));
         },
         close: () => sock.close(),
     };
@@ -50,23 +51,10 @@ function udpCollector(port) {
     return new Promise((resolve) => {
         sock.bind(port, '127.0.0.1', () => resolve({
             received,
-            last: () => received[received.length - 1],
             clear: () => { received.length = 0; },
             close: () => sock.close(),
         }));
     });
-}
-
-function post(pathname, body) {
-    return fetch(`http://127.0.0.1:${HTTP_PORT}${pathname}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body || {}),
-    }).then((r) => r.json());
-}
-
-function getJson(pathname) {
-    return fetch(`http://127.0.0.1:${HTTP_PORT}${pathname}`).then((r) => r.json());
 }
 
 /** Último paquete de un universo concreto (evita leer restos de otros tests). */
@@ -79,7 +67,6 @@ function lastFor(collector, universe, parser) {
     return null;
 }
 
-/** Espera hasta que el colector reciba algo o se agote el tiempo. */
 async function waitForPacket(collector, timeoutMs = 1500) {
     const t0 = Date.now();
     while (Date.now() - t0 < timeoutMs) {
@@ -89,19 +76,36 @@ async function waitForPacket(collector, timeoutMs = 1500) {
     return false;
 }
 
+/** Configura las dos entradas genéricas + la salida. */
+function setConfig(extra = {}) {
+    const body = Object.assign({
+        inputs: [
+            { protocol: 'artnet', enabled: true, interface: '0.0.0.0' },
+            { protocol: 'sacn', enabled: true, interface: '0.0.0.0', joinMulticast: false },
+        ],
+        merge: { sources: 'both' },
+        out: { protocol: 'sacn', targetMode: 'unicast', targetIp: '127.0.0.1', port: SACN_OUT, interface: '', rate: 30 },
+        universeOffset: 0,
+        enabled: false,
+    }, extra);
+    return fetch(`http://127.0.0.1:${HTTP_PORT}/api/config`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+    }).then((r) => r.json());
+}
+
+const getJson = (p) => fetch(`http://127.0.0.1:${HTTP_PORT}${p}`).then((r) => r.json());
+const post = (p, body) => fetch(`http://127.0.0.1:${HTTP_PORT}${p}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body || {}),
+}).then((r) => r.json());
+
 before(async () => {
     app = createApp({ port: HTTP_PORT, artnetInPort: ARTNET_IN, sacnInPort: SACN_IN, verbose: false });
     await app.start();
-    // sin multicast en los tests (más rápido y silencioso)
-    await post('/api/config', {
-        artnetIn: { enabled: true, interface: '0.0.0.0' },
-        sacnIn: { enabled: true, interface: '0.0.0.0', joinMulticast: false },
-        merge: { policy: 'htp', sources: 'both' },
-        out: { protocol: 'sacn', targetMode: 'unicast', targetIp: '127.0.0.1', port: SACN_OUT, interface: '', rate: 30 },
-        enabled: false,
-        universeOffset: 0,
-        mutedUniverses: [],
-    });
+    await setConfig();
     await post('/api/reset-stats');
 });
 
@@ -109,32 +113,52 @@ after(async () => {
     await app.stop();
 });
 
-test('el bridge recibe Art-Net Y sACN a la vez (las dos entradas conviven)', async () => {
+test('las dos entradas reciben a la vez (entrada 1 Art-Net, entrada 2 sACN)', async () => {
     const sender = udpSender();
     await sender.artnet(1, slots({ 0: 100 }));
     await sender.sacn(1, slots({ 0: 50 }));
     await sleep(250);
 
-    const stats = await getJson('/api/stats');
-    assert.ok(stats.stats.received.artnet >= 1, 'debe haber recibido Art-Net');
-    assert.ok(stats.stats.received.sacn >= 1, 'debe haber recibido sACN');
-
-    const cfg = await getJson('/api/config');
-    assert.deepStrictEqual(cfg.config.artnetIn.enabled, true);
-    assert.deepStrictEqual(cfg.config.sacnIn.enabled, true);
+    const stats = (await getJson('/api/stats')).stats;
+    assert.ok(stats.received[0].paquetes >= 1, 'la entrada 1 debe recibir Art-Net');
+    assert.ok(stats.received[1].paquetes >= 1, 'la entrada 2 debe recibir sACN');
     sender.close();
 });
 
-test('HTP: la salida sACN lleva el valor más alto de las dos fuentes', async () => {
+test('las entradas se pueden INVERTIR: entrada 1 sACN y entrada 2 Art-Net', async () => {
+    await setConfig({
+        inputs: [
+            { protocol: 'sacn', enabled: true, interface: '0.0.0.0', joinMulticast: false },
+            { protocol: 'artnet', enabled: true, interface: '0.0.0.0' },
+        ],
+    });
+    await post('/api/reset-stats');
+
+    const sender = udpSender();
+    for (let i = 0; i < 4; i++) {
+        await sender.sacn(20, slots({ 0: 11 }));
+        await sender.artnet(20, slots({ 1: 22 }));
+        await sleep(50);
+    }
+    await sleep(250);
+
+    const stats = (await getJson('/api/stats')).stats;
+    assert.ok(stats.received[0].paquetes >= 1, 'la entrada 1 (ahora sACN) debe recibir');
+    assert.ok(stats.received[1].paquetes >= 1, 'la entrada 2 (ahora Art-Net) debe recibir');
+
+    const cfg = await getJson('/api/config');
+    assert.strictEqual(cfg.config.inputs[0].protocol, 'sacn');
+    assert.strictEqual(cfg.config.inputs[1].protocol, 'artnet');
+
+    sender.close();
+    await setConfig(); // volver a la config por defecto
+});
+
+test('HTP: la salida lleva el valor más alto de las dos entradas', async () => {
     const collector = await udpCollector(SACN_OUT);
     const sender = udpSender();
     collector.clear();
-
-    await post('/api/config', {
-        merge: { policy: 'htp', sources: 'both' },
-        out: { protocol: 'sacn', targetMode: 'unicast', targetIp: '127.0.0.1', port: SACN_OUT },
-        enabled: true,
-    });
+    await setConfig({ enabled: true });
 
     const t0 = Date.now();
     while (Date.now() - t0 < 1200) {
@@ -143,61 +167,90 @@ test('HTP: la salida sACN lleva el valor más alto de las dos fuentes', async ()
         await sleep(60);
     }
 
-    assert.ok(await waitForPacket(collector), 'el bridge debe estar emitiendo sACN');
+    assert.ok(await waitForPacket(collector), 'el bridge debe estar emitiendo');
     const parsed = lastFor(collector, 2);
-    assert.ok(parsed, 'la salida debe ser un paquete sACN del universo 2');
-    assert.strictEqual(parsed.data[0], 100, 'canal 1: HTP debe tomar 100 (Art-Net)');
-    assert.strictEqual(parsed.data[1], 200, 'canal 2: HTP debe tomar 200 (sACN)');
-
-    // El estado unificado también se ve en la API
-    const cfg = await getJson('/api/config');
-    assert.strictEqual(cfg.config.merge.policy, 'htp');
+    assert.ok(parsed, 'debe haber salida del universo 2');
+    assert.strictEqual(parsed.data[0], 100, 'canal 1: HTP toma 100 (entrada 1)');
+    assert.strictEqual(parsed.data[1], 200, 'canal 2: HTP toma 200 (entrada 2)');
 
     collector.close();
     sender.close();
 });
 
-test('LTP: gana la fuente que llegó último (y la API lo refleja)', async () => {
+test('SILENCIADO POR ENTRADA: silenciar el universo en la entrada 1 deja pasar la entrada 2', async () => {
     const collector = await udpCollector(SACN_OUT);
     const sender = udpSender();
     collector.clear();
+    await setConfig({ enabled: true });
+    await post('/api/reset-stats');
 
-    await post('/api/config', { merge: { policy: 'ltp', sources: 'both' }, enabled: true });
+    // antes de silenciar: HTP toma el mayor (255 de la entrada 1)
+    let t0 = Date.now();
+    while (Date.now() - t0 < 800) {
+        await sender.artnet(4, slots({ 0: 255 }));
+        await sender.sacn(4, slots({ 0: 10 }));
+        await sleep(60);
+    }
+    let parsed = lastFor(collector, 4);
+    assert.strictEqual(parsed.data[0], 255, 'sin silenciar, gana el mayor');
 
-    // Art-Net primero, sACN 120ms después -> sACN debe ganar
-    await sender.artnet(3, slots({ 0: 111 }));
-    await sleep(120);
-    await sender.sacn(3, slots({ 0: 33 }));
-    await sleep(400);
+    // silenciamos el universo 4 EN LA ENTRADA 1
+    const r = await post('/api/mute', { input: 0, universe: 4 });
+    assert.strictEqual(r.muted, true);
 
-    assert.ok(await waitForPacket(collector), 'el bridge debe emitir con LTP');
-    const parsed = lastFor(collector, 3);
-    assert.ok(parsed, 'debe haber salida del universo 3');
-    assert.strictEqual(parsed.data[0], 33, 'LTP: gana sACN (llegó último)');
-
-    // Ahora Art-Net llega último -> 111
     collector.clear();
-    await sender.sacn(3, slots({ 0: 33 }));
-    await sleep(120);
-    await sender.artnet(3, slots({ 0: 111 }));
-    await sleep(400);
+    t0 = Date.now();
+    while (Date.now() - t0 < 900) {
+        await sender.artnet(4, slots({ 0: 255 }));  // entrada 1: debe ser ignorada
+        await sender.sacn(4, slots({ 0: 10 }));
+        await sleep(60);
+    }
 
-    const parsed2 = lastFor(collector, 3);
-    assert.strictEqual(parsed2.data[0], 111, 'LTP: ahora gana Art-Net');
+    parsed = lastFor(collector, 4);
+    assert.ok(parsed, 'el universo sigue saliendo (lo alimenta la entrada 2)');
+    assert.strictEqual(parsed.data[0], 10, 'con la entrada 1 silenciada, la salida queda limpia con 10');
 
+    const stats = (await getJson('/api/stats')).stats;
+    assert.ok(stats.droppedMuted[0] >= 1, 'los paquetes de la entrada 1 silenciada se descartan');
+
+    // limpiar el silenciado
+    await post('/api/mute', { input: 0, universe: 4 });
     collector.close();
     sender.close();
 });
 
-test('salida en formato Art-Net (el bridge puede emitir por cualquiera de los dos protocolos)', async () => {
+test('silenciar en la entrada 2 no afecta a la entrada 1', async () => {
+    const collector = await udpCollector(SACN_OUT);
+    const sender = udpSender();
+    collector.clear();
+    await setConfig({ enabled: true });
+
+    await post('/api/mute', { input: 1, universe: 6 });
+
+    const t0 = Date.now();
+    while (Date.now() - t0 < 900) {
+        await sender.artnet(6, slots({ 0: 200 }));
+        await sender.sacn(6, slots({ 0: 30 }));   // silenciado en la entrada 2
+        await sleep(60);
+    }
+
+    const parsed = lastFor(collector, 6);
+    assert.ok(parsed);
+    assert.strictEqual(parsed.data[0], 200, 'sólo llega la entrada 1 (la 2 está silenciada para ese universo)');
+
+    await post('/api/mute', { input: 1, universe: 6 });
+    collector.close();
+    sender.close();
+});
+
+test('salida en formato Art-Net (el bridge emite en cualquiera de los dos protocolos)', async () => {
     const collector = await udpCollector(ARTNET_OUT);
     const sender = udpSender();
     collector.clear();
 
-    await post('/api/config', {
-        merge: { policy: 'htp', sources: 'both' },
-        out: { protocol: 'artnet', targetMode: 'unicast', targetIp: '127.0.0.1', port: ARTNET_OUT },
+    await setConfig({
         enabled: true,
+        out: { protocol: 'artnet', targetMode: 'unicast', targetIp: '127.0.0.1', port: ARTNET_OUT },
     });
 
     const t0 = Date.now();
@@ -206,69 +259,55 @@ test('salida en formato Art-Net (el bridge puede emitir por cualquiera de los do
         await sleep(60);
     }
 
-    assert.ok(await waitForPacket(collector), 'el bridge debe emitir Art-Net');
+    assert.ok(await waitForPacket(collector), 'debe emitir Art-Net');
     const parsed = lastFor(collector, 5, dmx.parseArtNetDmx);
     assert.ok(parsed, 'la salida debe ser un ArtDmx válido del universo 5');
     assert.strictEqual(parsed.data[2], 77);
 
-    const stats = await getJson('/api/stats');
-    assert.ok(stats.stats.sent.artnet >= 1, 'debe haber contado envíos Art-Net');
-
     collector.close();
     sender.close();
+    await setConfig(); // restaurar salida sACN
 });
 
-test('selector de fuentes: con "sacn" la entrada Art-Net se ignora', async () => {
+test('selector de fuentes: con "input2" la entrada 1 se ignora', async () => {
     const collector = await udpCollector(SACN_OUT);
     const sender = udpSender();
     collector.clear();
-
-    await post('/api/config', {
-        merge: { policy: 'htp', sources: 'sacn' },
-        out: { protocol: 'sacn', targetMode: 'unicast', targetIp: '127.0.0.1', port: SACN_OUT },
-        enabled: true,
-    });
+    await setConfig({ enabled: true, merge: { sources: 'input2' } });
 
     const t0 = Date.now();
     while (Date.now() - t0 < 1000) {
-        await sender.artnet(6, slots({ 0: 255 }));
-        await sender.sacn(6, slots({ 0: 10 }));
+        await sender.artnet(7, slots({ 0: 255 }));   // entrada 1: ignorada por la unificación
+        await sender.sacn(7, slots({ 0: 10 }));
         await sleep(60);
     }
 
     assert.ok(await waitForPacket(collector));
-    const parsed = lastFor(collector, 6);
-    assert.strictEqual(parsed.data[0], 10, 'con sources=sacn debe ignorar Art-Net (255)');
+    const parsed = lastFor(collector, 7);
+    assert.strictEqual(parsed.data[0], 10, 'con sources=input2 sólo pasa la entrada 2');
 
     collector.close();
     sender.close();
+    await setConfig({ merge: { sources: 'both' } });
 });
 
-test('offset de universo y universos silenciados se aplican a la salida', async () => {
+test('offset de universo se aplica a la salida', async () => {
     const collector = await udpCollector(SACN_OUT);
     const sender = udpSender();
     collector.clear();
-
-    await post('/api/config', {
-        universeOffset: 1,
-        mutedUniverses: [9],
-        merge: { policy: 'htp', sources: 'both' },
-        out: { protocol: 'sacn', targetMode: 'unicast', targetIp: '127.0.0.1', port: SACN_OUT },
-        enabled: true,
-    });
+    await setConfig({ enabled: true, universeOffset: 1 });
 
     const t0 = Date.now();
-    while (Date.now() - t0 < 1000) {
-        await sender.sacn(8, slots({ 0: 42 })); // sale como universo 9 -> silenciado
-        await sender.sacn(7, slots({ 0: 24 })); // sale como universo 8
+    while (Date.now() - t0 < 900) {
+        await sender.sacn(7, slots({ 0: 24 }));
         await sleep(60);
     }
-
     await sleep(200);
+
     const universos = new Set(collector.received.map((p) => dmx.parseSacn(p).universe));
     assert.ok(universos.has(8), 'el universo 7 + offset 1 debe salir como 8');
-    assert.ok(!universos.has(9), 'el universo 8 + offset 1 = 9 está silenciado y no debe salir');
 
     collector.close();
     sender.close();
+    await setConfig({ universeOffset: 0 });
 });
